@@ -1,0 +1,6 @@
+{
+  "name": "Fitfood",
+  "description": "Fusion between vertical immersive video feeds and instant food ordering. Scroll videos, click to view dishes, order with ease.",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

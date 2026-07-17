@@ -1,0 +1,127 @@
+{
+  "entities": {
+    "Restaurant": {
+      "title": "Restaurant",
+      "description": "Represents a restaurateur profile containing their identity, contact, branding, and status.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "name": { "type": "string" },
+        "address": { "type": "string" },
+        "commissionRateDelivery": { "type": "number" },
+        "commissionRateCollect": { "type": "number" },
+        "stripeAccountId": { "type": "string" },
+        "logoUrl": { "type": "string" },
+        "bannerUrl": { "type": "string" },
+        "slogan": { "type": "string" },
+        "isCertified": { "type": "boolean" },
+        "subscriptionTier": { "type": "string", "enum": ["free", "pro", "gold"] },
+        "promoMessage": { "type": "string" },
+        "countdownMinutes": { "type": "number" },
+        "countdownText": { "type": "string" },
+        "likesReceived": { "type": "number" },
+        "pointsReceived": { "type": "number" },
+        "createdAt": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "description": { "type": "string" },
+        "isFavorite": { "type": "boolean" },
+        "category": { "type": "string" },
+        "dispositionShop": { "type": "string" },
+        "shortName": { "type": "string" },
+        "latitude": { "type": "number" },
+        "longitude": { "type": "number" }
+      },
+      "required": ["id", "name", "address"]
+    },
+    "Video": {
+      "title": "Video",
+      "description": "Represents a vertical video post published by a restaurateur to the social feed.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "restaurantId": { "type": "string" },
+        "videoUrl": { "type": "string" },
+        "associatedDishId": { "type": "string" },
+        "title": { "type": "string" },
+        "likesCount": { "type": "number" },
+        "createdAt": { "type": "string" },
+        "promoOverlay": { "type": "string" }
+      },
+      "required": ["id", "restaurantId", "videoUrl"]
+    },
+    "Dish": {
+      "title": "Dish",
+      "description": "Represents a culinary dish offered in a restaurateur's menu.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "restaurantId": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "price": { "type": "number" },
+        "isAvailable": { "type": "boolean" },
+        "imageUrl": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "restaurantId", "name", "price"]
+    },
+    "MediaFile": {
+      "title": "MediaFile",
+      "description": "Represents a durable backup of an uploaded image or video file to avoid loss on ephemeral container restarts.",
+      "type": "object",
+      "properties": {
+        "filename": { "type": "string" },
+        "contentType": { "type": "string" },
+        "base64Data": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["filename", "contentType", "base64Data"]
+    },
+    "DesignSettings": {
+      "title": "DesignSettings",
+      "description": "Represents custom design, branding, and layout settings for the platform.",
+      "type": "object",
+      "properties": {
+        "accentColor": { "type": "string" },
+        "backgroundColor": { "type": "string" },
+        "textColor": { "type": "string" },
+        "appName": { "type": "string" },
+        "logoUrl": { "type": "string" },
+        "heroTitle": { "type": "string" },
+        "promoMessage": { "type": "string" },
+        "borderRadius": { "type": "string" },
+        "bannerUrl": { "type": "string" },
+        "typography": { "type": "string" },
+        "layoutPreset": { "type": "string" },
+        "logoSizeMobile": { "type": "number" },
+        "logoSizeTablet": { "type": "number" },
+        "logoSizeDesktop": { "type": "number" },
+        "autoSaveEnabled": { "type": "boolean" }
+      }
+    }
+  },
+  "firestore": {
+    "/restaurants/{restaurantId}": {
+      "schema": "Restaurant",
+      "description": "Collection of all registered restaurants / restaurateurs."
+    },
+    "/videos/{videoId}": {
+      "schema": "Video",
+      "description": "Collection of vertical promotional videos published to the public feed."
+    },
+    "/dishes/{dishId}": {
+      "schema": "Dish",
+      "description": "Collection of menu items offered by the restaurants."
+    },
+    "/media_files/{filename}": {
+      "schema": "MediaFile",
+      "description": "Durable backup store for uploaded media files."
+    },
+    "/settings/{settingId}": {
+      "schema": "DesignSettings",
+      "description": "Collection of global custom settings like design, branding, and customization."
+    }
+  }
+}

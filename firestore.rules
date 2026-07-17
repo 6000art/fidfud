@@ -1,0 +1,59 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // Restaurants
+    match /restaurants/{restaurantId} {
+      allow read, write: if true;
+    }
+
+    // Videos
+    match /videos/{videoId} {
+      allow read, write: if true;
+    }
+
+    // Dishes
+    match /dishes/{dishId} {
+      allow read, write: if true;
+    }
+
+    // Media Files
+    match /media_files/{filename} {
+      allow read, write: if true;
+    }
+
+    // Settings (Design & Branding)
+    match /settings/{settingId} {
+      allow read, write: if true;
+    }
+
+    // Restaurateurs
+    match /restaurateurs/{restaurateurId} {
+      allow read, write: if true;
+    }
+
+    // Restaurateur Media
+    match /restaurateur_media/{mediaId} {
+      allow read, write: if true;
+    }
+
+    // Comments
+    match /comments/{commentId} {
+      allow read, write: if true;
+    }
+  }
+}
