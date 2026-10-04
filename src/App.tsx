@@ -89,7 +89,7 @@ export default function App() {
   // Auto-Save background effect (runs every 60 seconds when enabled for admins)
   useEffect(() => {
     if (!isAutoSaveEnabled) return;
-    const isAdmin = user && (user.role === 'admin' || user.email?.toLowerCase() === 'sybis.co@gmail.com');
+    const isAdmin = user?.role === 'admin';
     if (!isAdmin) return;
 
     const interval = setInterval(async () => {
@@ -465,11 +465,23 @@ export default function App() {
     });
   };
 
-  // Fetch current user session
-  const fetchSession = async (firebaseUid?: string, email?: string) => {
+  // Fetch current user session with Firebase Authentication token
+  const fetchSession = async () => {
     try {
-      const queryParam = firebaseUid ? `?uid=${encodeURIComponent(firebaseUid)}` : email ? `?email=${encodeURIComponent(email)}` : '';
-      const res = await fetch(`/api/auth/me${queryParam}`);
+      const auth = getFirebaseAuth();
+      let token = '';
+      if (auth?.currentUser) {
+        token = await auth.currentUser.getIdToken().catch(() => '');
+      }
+
+      const headers: Record<string, string> = {};
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      } else if (user?.id) {
+        headers['x-user-id'] = user.id;
+      }
+
+      const res = await fetch('/api/auth/me', { headers });
       if (res.ok) {
         const text = await res.text();
         try {
@@ -479,16 +491,13 @@ export default function App() {
             try {
               localStorage.setItem('fidfud_user', JSON.stringify(data.user));
             } catch {}
-          } else {
-            // Keep active admin or merchant user in local session if server session cookie is unset
-            setUser(prev => (prev && (prev.role === 'admin' || (prev.role as string) === 'merchant')) ? prev : null);
           }
         } catch (jsonErr) {
           console.warn('Non-JSON response from /api/auth/me:', jsonErr);
         }
       }
     } catch (err: any) {
-      console.warn('[Fidfud Session] Session not loaded (running in sandbox/offline mode):', err?.message || err);
+      console.warn('[Fidfud Session] Session not loaded:', err?.message || err);
     }
   };
 
@@ -640,7 +649,7 @@ export default function App() {
                   id: firebaseUser.uid,
                   uid: firebaseUser.uid,
                   email: firebaseUser.email || uData.email,
-                  role: uData.role || (firebaseUser.email?.toLowerCase() === 'sybis.co@gmail.com' ? 'admin' : 'client'),
+                  role: uData.role === 'admin' ? 'admin' : (uData.role || 'client'),
                   fullName: uData.fullName || firebaseUser.displayName || '',
                   phone: uData.phone || '',
                   address: uData.address || '',
@@ -663,7 +672,13 @@ export default function App() {
           } catch (e: any) {
             console.warn('[Firebase Auth State] Notice fetching user doc:', e?.message || e);
           }
-          await fetchSession(firebaseUser.uid, firebaseUser.email || undefined);
+          await fetchSession();
+        } else {
+          // If Firebase Auth confirms no user is logged in, invalidate any unverified localStorage cache
+          setUser(null);
+          try {
+            localStorage.removeItem('fidfud_user');
+          } catch {}
         }
       });
       return () => unsubscribe();
@@ -674,7 +689,7 @@ export default function App() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('admin') === 'true') {
-      if (user?.role === 'admin' || user?.email?.toLowerCase() === 'sybis.co@gmail.com') {
+      if (user?.role === 'admin') {
         setIsAdminCMSOpen(true);
       } else if (!user) {
         setIsAuthOpen(true);
@@ -811,7 +826,7 @@ export default function App() {
     } else {
       setCurrentRole('client');
     }
-    if (authUser.role === 'admin' || authUser.email?.toLowerCase() === 'sybis.co@gmail.com') {
+    if (authUser.role === 'admin') {
       setIsAdminCMSOpen(true);
     }
     refreshAllData();
@@ -1910,7 +1925,7 @@ export default function App() {
       )}
 
       {/* Retractable Left-Side Glossy Admin CMS Tab (Only for Super Admin) */}
-      {(user?.role === 'admin' || user?.email?.toLowerCase() === 'sybis.co@gmail.com') && (
+      {user?.role === 'admin' && (
         <div className={`fixed left-0 top-[40%] -translate-y-1/2 z-[100] transition-all duration-300 flex items-stretch ${
           isAdminTabExpanded ? 'translate-x-0' : '-translate-x-[calc(100%-20px)]'
         }`}>
@@ -2122,7 +2137,7 @@ export default function App() {
       </div>
 
       {/* Super-Admin Visual Editor Floating Toolbar */}
-      {designSettings.isVisualEditorActive && (user?.role === 'admin' || user?.email?.toLowerCase() === 'sybis.co@gmail.com') && (
+      {designSettings.isVisualEditorActive && user?.role === 'admin' && (
         <div className="fixed top-14 left-1/2 -translate-x-1/2 z-[90] bg-amber-500/95 text-black px-4 py-2 rounded-2xl border-2 border-black/20 shadow-2xl backdrop-blur-xl flex items-center gap-3 text-xs font-black animate-bounce">
           <span className="flex items-center gap-1.5 uppercase tracking-wider">
             🛠️ Mode Éditeur Elementor Actif

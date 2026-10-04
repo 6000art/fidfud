@@ -183,7 +183,7 @@ export default function Header({
 
   const hiddenElements: string[] = designSettings?.hiddenElements || [];
   const isVisualEditorActive: boolean = designSettings?.isVisualEditorActive || false;
-  const isSuperAdmin = user && (user.role === 'admin' || user.email?.toLowerCase() === 'sybis.co@gmail.com');
+  const isSuperAdmin = Boolean(user && user.role === 'admin');
 
   const accentColor = designSettings?.accentColor || '#FF5C00';
   const rawBgColor = headerConfig.backgroundColor || '#0B0B0C';

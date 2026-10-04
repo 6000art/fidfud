@@ -200,7 +200,7 @@ export default function MerchantDashboard({
   const [isCashingOut, setIsCashingOut] = useState<boolean>(false);
 
   // Filter restaurants owned by current logged in user
-  const isUserAdmin = user?.role === 'admin' || user?.email?.toLowerCase() === 'sybis.co@gmail.com';
+  const isUserAdmin = user?.role === 'admin';
   
   const myOwnedRestaurants = useMemo(() => {
     if (!user) return [];

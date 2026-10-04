@@ -27,9 +27,8 @@ service cloud.firestore {
 
     function isAdmin() {
       return isSignedIn() && (
-        (request.auth.token.email != null && request.auth.token.email.lower() == 'sybis.co@gmail.com') ||
-        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin') ||
-        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'
       );
     }
 
@@ -38,9 +37,13 @@ service cloud.firestore {
       allow read, get: if isOwner(userId) || isAdmin();
       allow list: if isAdmin();
       allow create: if isOwner(userId) && (
-        request.resource.data.role in ['client', 'restaurant', 'courier'] || isAdmin()
+        request.resource.data.role in ['client', 'restaurant', 'courier'] &&
+        request.resource.data.role != 'admin'
       );
-      allow update: if (isOwner(userId) && request.resource.data.role == resource.data.role) || isAdmin();
+      allow update: if (
+        isOwner(userId) && 
+        request.resource.data.role == resource.data.role
+      ) || isAdmin();
       allow delete: if isAdmin();
     }
 

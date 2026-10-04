@@ -761,60 +761,6 @@
   ],
   "videos": [
     {
-      "id": "vid-7z8lnd0",
-      "restaurantId": "rest-fxkzj4c",
-      "videoUrl": "/uploads/culinary-1.mp4",
-      "associatedDishId": "dish-55z9qqc",
-      "title": "🔥 Sensation culinaire chez La Trattoria Lab ivry sur seine : découvrez notre délicieuse création Le Double Bacon Smash Deluxe ! 🤤✨",
-      "likesCount": 49,
-      "createdAt": "2026-09-24T14:11:54.005Z",
-      "validationStatus": "valid",
-      "validationCheckedAt": "2026-10-04T10:51:39.346Z",
-      "isOnline": true,
-      "viewsCount": 1,
-      "averageWatchTime": 4
-    },
-    {
-      "id": "vid-lpo176t",
-      "restaurantId": "rest-8f95skn",
-      "videoUrl": "/uploads/culinary-4.mp4",
-      "associatedDishId": "dish-42uhhhm",
-      "title": "🔥 Sensation culinaire chez L'Atelier Bella ivry sur seine : découvrez notre délicieuse création La Pizza Spéciale du Chef ! 🤤✨",
-      "likesCount": 52,
-      "createdAt": "2026-09-24T14:11:47.626Z",
-      "validationStatus": "valid",
-      "validationCheckedAt": "2026-10-04T10:51:39.346Z",
-      "isOnline": true
-    },
-    {
-      "id": "vid-9l64u69",
-      "restaurantId": "rest-mcn627z",
-      "videoUrl": "/uploads/culinary-2.mp4",
-      "associatedDishId": "dish-rodziro",
-      "title": "🔥 NOUVEAU SUR FIDFUD : Découvrez Le Camion Qui Fume ! L'art culinaire authentique et du fait maison ✨",
-      "likesCount": 289,
-      "createdAt": "2026-09-24T12:36:26.051Z",
-      "validationStatus": "valid",
-      "validationCheckedAt": "2026-10-04T10:51:39.346Z",
-      "isOnline": true,
-      "viewsCount": 3632,
-      "averageWatchTime": 22.1
-    },
-    {
-      "id": "vid-ifoh4kp",
-      "restaurantId": "rest-38phh70",
-      "videoUrl": "/uploads/culinary-1.mp4",
-      "associatedDishId": "dish-yax3px1",
-      "title": "🔥 NOUVEAU SUR FIDFUD : Découvrez Restaurant Gourmand ! L'art culinaire authentique et du fait maison ✨",
-      "likesCount": 296,
-      "createdAt": "2026-09-24T12:36:15.369Z",
-      "validationStatus": "valid",
-      "validationCheckedAt": "2026-10-04T10:51:39.346Z",
-      "isOnline": true,
-      "viewsCount": 108,
-      "averageWatchTime": 6.9
-    },
-    {
       "id": "vid-recipe-rec-avocado-minute",
       "restaurantId": "rec-author-fidfud",
       "restaurantName": "👨‍🍳 Camille Gourmande (Recette)",
@@ -905,7 +851,61 @@
         "isApproved": true
       },
       "validationStatus": "valid",
-      "validationCheckedAt": "2026-10-04T10:51:39.346Z"
+      "validationCheckedAt": "2026-10-04T20:35:03.351Z"
+    },
+    {
+      "id": "vid-7z8lnd0",
+      "restaurantId": "rest-fxkzj4c",
+      "videoUrl": "/uploads/culinary-1.mp4",
+      "associatedDishId": "dish-55z9qqc",
+      "title": "🔥 Sensation culinaire chez La Trattoria Lab ivry sur seine : découvrez notre délicieuse création Le Double Bacon Smash Deluxe ! 🤤✨",
+      "likesCount": 49,
+      "createdAt": "2026-09-24T14:11:54.005Z",
+      "validationStatus": "valid",
+      "validationCheckedAt": "2026-10-04T20:35:03.351Z",
+      "isOnline": true,
+      "viewsCount": 1,
+      "averageWatchTime": 4
+    },
+    {
+      "id": "vid-lpo176t",
+      "restaurantId": "rest-8f95skn",
+      "videoUrl": "/uploads/culinary-4.mp4",
+      "associatedDishId": "dish-42uhhhm",
+      "title": "🔥 Sensation culinaire chez L'Atelier Bella ivry sur seine : découvrez notre délicieuse création La Pizza Spéciale du Chef ! 🤤✨",
+      "likesCount": 52,
+      "createdAt": "2026-09-24T14:11:47.626Z",
+      "validationStatus": "valid",
+      "validationCheckedAt": "2026-10-04T20:35:03.351Z",
+      "isOnline": true
+    },
+    {
+      "id": "vid-9l64u69",
+      "restaurantId": "rest-mcn627z",
+      "videoUrl": "/uploads/culinary-2.mp4",
+      "associatedDishId": "dish-rodziro",
+      "title": "🔥 NOUVEAU SUR FIDFUD : Découvrez Le Camion Qui Fume ! L'art culinaire authentique et du fait maison ✨",
+      "likesCount": 289,
+      "createdAt": "2026-09-24T12:36:26.051Z",
+      "validationStatus": "valid",
+      "validationCheckedAt": "2026-10-04T20:35:03.351Z",
+      "isOnline": true,
+      "viewsCount": 211,
+      "averageWatchTime": 15.8
+    },
+    {
+      "id": "vid-ifoh4kp",
+      "restaurantId": "rest-38phh70",
+      "videoUrl": "/uploads/culinary-1.mp4",
+      "associatedDishId": "dish-yax3px1",
+      "title": "🔥 NOUVEAU SUR FIDFUD : Découvrez Restaurant Gourmand ! L'art culinaire authentique et du fait maison ✨",
+      "likesCount": 296,
+      "createdAt": "2026-09-24T12:36:15.369Z",
+      "validationStatus": "valid",
+      "validationCheckedAt": "2026-10-04T20:35:03.351Z",
+      "isOnline": true,
+      "viewsCount": 86,
+      "averageWatchTime": 6.9
     }
   ],
   "orders": [
@@ -971,7 +971,6 @@
       ]
     }
   ],
-  "currentUserSession": null,
   "formulas": [
     {
       "id": "free",
@@ -994,64 +993,64 @@
   ],
   "restaurateurs": [
     {
-      "userId": "usr-rest-nonna",
-      "phone": "+33 6 12 34 56 78",
       "createdAt": "2026-07-14T17:34:46.304Z",
-      "lastName": "Rossi",
+      "phone": "+33 6 12 34 56 78",
+      "userId": "usr-rest-nonna",
+      "restaurantId": "rest-nonna",
+      "bio": "Chef napolitain passionné avec 15 ans d'expérience dans l'art de la pizza au feu de bois.",
       "profileImageUrl": "https://images.unsplash.com/photo-1577219491135-ce391730fb2c?w=150&auto=format&fit=crop&q=80",
+      "email": "partner@nonnapizza.fr",
       "firstName": "Giovanni",
       "id": "restaurateur-nonna",
-      "email": "partner@nonnapizza.fr",
-      "bio": "Chef napolitain passionné avec 15 ans d'expérience dans l'art de la pizza au feu de bois.",
-      "restaurantId": "rest-nonna"
+      "lastName": "Rossi"
     },
     {
-      "id": "restaurateur-o9taj3u",
-      "restaurantId": "rest-2fxqcum",
-      "email": "contact@kolr.fr",
-      "firstName": "Malick",
       "phone": "+33619845649",
+      "id": "restaurateur-o9taj3u",
       "bio": "Le Commencement : Une Rencontre au Carrefour de Deux Mondes\nL'histoire de SYWINS prend racine bien avant sa création, dans une alchimie improbable mais évidente : celle d'un père originaire du Sénégal et d'une mère venue des États-Unis. Deux cultures riches en traditions, en générosité et, surtout, en histoires de famille racontées autour d'une table.\n\nL’amour unit ces deux parcours venus de continents différents. En s'installant ensemble, ils ont naturellement fusionné leurs univers. Pour eux, cuisiner n'a jamais été simplement préparer un repas : c’était une manière de célébrer leurs racines, de raconter d'où ils venaient et de transmettre le meilleur de leur héritage à leurs enfants. C’est cette double empreinte culturelle — la chaleur, les épices et la profondeur des plats sénégalais d'un côté, le réconfort, la gourmandise et l'audace de la cuisine américaine de l'autre — qui a forgé l'identité de SYWINS.\n\nLa Naissance de SYWINS : Le Fait Maison comme ADN\nGrandir entre un maffé ou un thiéboudienne mijoté aux saveurs du Sénégal et des classiques réconfortants de la cuisine américaine, c'est baigner dans un monde où le goût prime sur tout. Face à cette richesse culinaire unique, l'idée de créer un lieu à l'image de cette double culture s'est imposée comme une évidence.\n\nSYWINS naît alors de cette volonté de partage : offrir une cuisine 100 % faite maison, préparée avec amour, où les frontières s'effacent pour laisser place au plaisir pur. Ici, chaque plat raconte une histoire de famille, un pont dressé entre Dakar et les États-Unis.\n\nUne Expérience Unique : Quand l'Afrique et l'Amérique se Donnent Rendez-Vous\nChez SYWINS, la promesse est simple mais exigeante :\n\nL'âme et la générosité sénégalaises : des épices maîtrisées, des plats mijotés qui réchauffent le cœur et rappellent la teranga (l'hospitalité légendaire sénégalaise).\n\nL'esprit et la gourmandise américains : des textures généreuses, des saveurs franches et un sens aigu du partage décomplexé.\n\nLe résultat ? Des spécialités culinaires uniques où le \"fait maison\" n'est pas un argument marketing, mais un engagement familial. Chaque recette est pensée comme un hommage aux parents, une célébration de leur rencontre et un cadeau offert à tous les gourmands en quête d'authentique.\n\nAujourd'hui, SYWINS continue d'écrire son histoire à travers chaque assiette, prouvant que les plus beaux voyages culinaires naissent souvent des plus belles histoires d'amour. ✨",
-      "lastName": "Winslow",
-      "createdAt": "2026-07-30T07:24:07.215Z",
+      "firstName": "Malick",
       "userId": "usr-hdlakiy",
-      "profileImageUrl": "/uploads/Joey-1785396243076.png"
+      "createdAt": "2026-07-30T07:24:07.215Z",
+      "restaurantId": "rest-2fxqcum",
+      "lastName": "Winslow",
+      "profileImageUrl": "/uploads/Joey-1785396243076.png",
+      "email": "contact@kolr.fr"
     },
     {
-      "firstName": "Kenji",
-      "restaurantId": "rest-tokyo",
-      "id": "restaurateur-tokyo",
-      "email": "contact@tokyoramen.jp",
-      "userId": "usr-rest-tokyo",
-      "profileImageUrl": "https://images.unsplash.com/photo-1583394838336-acd977736f90?w=150&auto=format&fit=crop&q=80",
-      "lastName": "Sato",
       "createdAt": "2026-07-14T17:34:46.304Z",
       "phone": "+33 6 98 76 54 32",
-      "bio": "Maître Ramen formé à Tokyo, dévoué à perfectionner l'onctuosité de nos bouillons artisanaux."
+      "userId": "usr-rest-tokyo",
+      "lastName": "Sato",
+      "bio": "Maître Ramen formé à Tokyo, dévoué à perfectionner l'onctuosité de nos bouillons artisanaux.",
+      "email": "contact@tokyoramen.jp",
+      "id": "restaurateur-tokyo",
+      "profileImageUrl": "https://images.unsplash.com/photo-1583394838336-acd977736f90?w=150&auto=format&fit=crop&q=80",
+      "restaurantId": "rest-tokyo",
+      "firstName": "Kenji"
     }
   ],
   "restaurateurMedia": [
     {
       "isPosted": true,
-      "restaurantId": "rest-nonna",
-      "restaurateurId": "restaurateur-nonna",
-      "createdAt": "2026-07-14T17:34:46.304Z",
-      "id": "media-nonna-1",
-      "title": "Nappage herbes fraîches et basilic",
       "url": "https://assets.mixkit.co/videos/preview/mixkit-putting-fresh-herbs-on-a-pizza-39981-large.mp4",
+      "restaurateurId": "restaurateur-nonna",
       "associatedDishId": "dish-nonna-1",
-      "mediaType": "video"
+      "createdAt": "2026-07-14T17:34:46.304Z",
+      "title": "Nappage herbes fraîches et basilic",
+      "mediaType": "video",
+      "restaurantId": "rest-nonna",
+      "id": "media-nonna-1"
     },
     {
-      "title": "Versement de sirop d'érable",
       "url": "https://assets.mixkit.co/videos/preview/mixkit-dripping-syrup-on-delicious-pancakes-34326-large.mp4",
       "createdAt": "2026-07-14T17:34:46.304Z",
+      "restaurantId": "rest-nonna",
       "associatedDishId": "dish-nonna-3",
-      "mediaType": "video",
-      "isPosted": true,
-      "id": "media-nonna-2",
       "restaurateurId": "restaurateur-nonna",
-      "restaurantId": "rest-nonna"
+      "title": "Versement de sirop d'érable",
+      "isPosted": true,
+      "mediaType": "video",
+      "id": "media-nonna-2"
     }
   ],
   "couriers": [
@@ -1151,74 +1150,74 @@
     "typography": "Space Grotesk",
     "layoutPreset": "whatnot",
     "customIcons": {
-      "iconShare": "Share2",
-      "iconCart": "ShoppingBag",
-      "iconSend": "Send",
-      "iconSearch": "Search",
       "iconLoyalty": "Coins",
-      "iconMute": "Volume2",
-      "iconOrder": "Zap",
+      "iconCart": "ShoppingBag",
       "iconFollow": "Plus",
-      "iconReview": "Star",
-      "iconLike": "Heart",
-      "iconFilter": "Sliders",
       "iconProfile": "User",
-      "iconHome": "Home",
       "iconUnmute": "VolumeX",
-      "iconGift": "Gift"
+      "iconSend": "Send",
+      "iconOrder": "Zap",
+      "iconMute": "Volume2",
+      "iconSearch": "Search",
+      "iconHome": "Home",
+      "iconReview": "Star",
+      "iconFilter": "Sliders",
+      "iconGift": "Gift",
+      "iconShare": "Share2",
+      "iconLike": "Heart"
     },
     "desktopAds": [
       {
-        "clickUrl": "#",
-        "mediaUrl": "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExM3Y2czA5MXNqdmtnaW5vYmN5enU3MHdwdG1scmd6bjZubG42Z3J3ciZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/l0O9xBeS9EUnIy9by/giphy.gif",
-        "title": "Nonna's Fresh Truffle Pizza 🍕",
-        "id": "ad-top-sidebar",
+        "isActive": true,
         "mediaType": "gif",
+        "mediaUrl": "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExM3Y2czA5MXNqdmtnaW5vYmN5enU3MHdwdG1scmd6bjZubG42Z3J3ciZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/l0O9xBeS9EUnIy9by/giphy.gif",
+        "clickUrl": "#",
         "subtitle": "Commandez notre pizza cuite minute au feu de bois !",
-        "isActive": true
+        "title": "Nonna's Fresh Truffle Pizza 🍕",
+        "id": "ad-top-sidebar"
       },
       {
         "id": "ad-bottom-sidebar",
-        "title": "Tokyo Ramen Special 🍜",
-        "subtitle": "Découvrez le ramen Tonkotsu fait maison.",
         "isActive": true,
+        "title": "Tokyo Ramen Special 🍜",
+        "mediaUrl": "/uploads/culinary-fallback.mp4",
+        "subtitle": "Découvrez le ramen Tonkotsu fait maison.",
         "mediaType": "video",
-        "clickUrl": "#",
-        "mediaUrl": "/uploads/culinary-fallback.mp4"
+        "clickUrl": "#"
       }
     ],
     "sectionsVisible": {
-      "showVideoFeed": true,
-      "showLoyaltyClubBanner": true,
-      "showChefSpotlight": true,
+      "showFeaturedProducts": true,
       "showHero": true,
-      "showFeaturedProducts": true
+      "showLoyaltyClubBanner": true,
+      "showVideoFeed": true,
+      "showChefSpotlight": true
     },
     "featuredDishIds": [],
     "customFeatures": {
+      "enableTipsAndFlowers": true,
       "enableLeaderOfTheMonth": true,
-      "enableStripeCommissionSplit": true,
-      "enableLiveOrdersHistory": true,
-      "enableLoyaltyPoints": true,
       "enableDeliveryCouriers": true,
-      "enableTipsAndFlowers": true
+      "enableLiveOrdersHistory": true,
+      "enableStripeCommissionSplit": true,
+      "enableLoyaltyPoints": true
     },
     "createdFeatures": [
       {
         "title": "Retrait Express 🏃‍♂️",
         "id": "feat-1",
-        "badge": "PRATIQUE",
+        "description": "Commandez en direct et retirez votre plat sans attente en restaurant.",
         "cta": "Activer",
         "icon": "⚡",
-        "description": "Commandez en direct et retirez votre plat sans attente en restaurant."
+        "badge": "PRATIQUE"
       },
       {
-        "badge": "VERT",
-        "description": "Livré exclusivement par nos livreurs à vélo pour un impact carbone neutre.",
         "title": "Livraison Éco-Locale 🚴",
         "icon": "🌿",
+        "description": "Livré exclusivement par nos livreurs à vélo pour un impact carbone neutre.",
+        "id": "feat-2",
         "cta": "En savoir plus",
-        "id": "feat-2"
+        "badge": "VERT"
       }
     ],
     "logoSizeMobile": 34,
@@ -1235,26 +1234,26 @@
     "splashLogoUrl": "data:image/jpeg;base64,/9j/4QhoRXhpZgAASUkqAAgAAAADAA4BAgD4AwAAMgAAADsBAgAlAAAAKgQAAGmHBAABAAAATwQAA...[truncated-for-firestore]",
     "isVisualEditorActive": false,
     "headerConfig": {
-      "secondaryLogoType": "badge",
-      "logoSizeMobile": 34,
+      "visibleIcons": {
+        "djLive": true,
+        "searchBar": true,
+        "ordersHistory": true,
+        "gpsLocation": true,
+        "cart": true,
+        "account": true,
+        "hamburgerMenu": true
+      },
+      "showSecondaryLogo": true,
       "logoUrl": "/uploads/logo_icone-1785702747479.png",
-      "logoPosition": "left",
-      "backgroundOpacity": 40,
       "secondaryLogoText": "FEED AND FOOD",
-      "secondaryLogoUrl": "/uploads/logo_1-1785702759451.png",
       "logoSizeDesktop": 63,
       "backgroundColor": "#0B0B0C",
-      "visibleIcons": {
-        "ordersHistory": true,
-        "account": true,
-        "searchBar": true,
-        "djLive": true,
-        "gpsLocation": true,
-        "hamburgerMenu": true,
-        "cart": true
-      },
+      "logoPosition": "left",
+      "logoSizeMobile": 34,
+      "backgroundOpacity": 40,
+      "secondaryLogoType": "badge",
       "enableBackdropBlur": true,
-      "showSecondaryLogo": true
+      "secondaryLogoUrl": "/uploads/logo_1-1785702759451.png"
     },
     "mobileBgColor": "#277916",
     "homePresentationVideoUrl": "/uploads/culinary-fallback.mp4",

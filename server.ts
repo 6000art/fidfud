@@ -138,8 +138,70 @@ let users: any[] = [
   { id: 'usr-rest-burger', email: 'chef@burgerlab.com', role: 'restaurant' }
 ];
 
-// Active mock user session (mirrors active Supabase Auth session, defaults to null for unauthenticated visitors)
-let currentUserSession: any = null;
+let firebaseConfig: any = null;
+try {
+  const cfgPath = path.join(process.cwd(), 'firebase-applet-config.json');
+  if (fs.existsSync(cfgPath)) {
+    firebaseConfig = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
+  }
+} catch (e) {}
+
+// Firebase token verification and user authentication helpers
+function verifyFirebaseToken(token: string): { uid: string; email?: string } | null {
+  try {
+    if (!token || typeof token !== 'string') return null;
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    const payloadJson = Buffer.from(parts[1], 'base64').toString('utf8');
+    const payload = JSON.parse(payloadJson);
+    
+    // Check expiration timestamp
+    const now = Math.floor(Date.now() / 1000);
+    if (payload.exp && payload.exp < now) {
+      return null;
+    }
+    
+    // Check issuer and audience against Firebase project
+    const projectId = firebaseConfig?.projectId || "gen-lang-client-0442526754";
+    if (payload.aud && payload.aud !== projectId) {
+      return null;
+    }
+    if (payload.iss && payload.iss !== `https://securetoken.google.com/${projectId}`) {
+      return null;
+    }
+
+    const uid = payload.sub || payload.user_id;
+    if (!uid) return null;
+    return { uid, email: payload.email };
+  } catch (err) {
+    return null;
+  }
+}
+
+function getRequestUser(req: express.Request): any | null {
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const tokenStr = authHeader.substring(7).trim();
+    const verified = verifyFirebaseToken(tokenStr);
+    if (verified && verified.uid) {
+      const match = users.find(u => u.id === verified.uid || u.uid === verified.uid || (verified.email && u.email?.toLowerCase() === verified.email.toLowerCase()));
+      if (match) return match;
+      return {
+        id: verified.uid,
+        uid: verified.uid,
+        email: verified.email || `${verified.uid}@fidfud.ai`,
+        role: 'client'
+      };
+    }
+  }
+  return null;
+}
+
+function sanitizeUser(u: any): any {
+  if (!u) return null;
+  const { password, ...safeUser } = u;
+  return safeUser;
+}
 
 // New In-Memory Stores
 let supportTickets: any[] = [
@@ -1577,6 +1639,26 @@ async function syncFromFirestore() {
       console.error('[Firebase Server] Error syncing design settings:', err);
     }
 
+    // Sync users from Firestore
+    try {
+      const usersSnap = await runFirestoreOp('get users', () => getDocs(collection(db, 'users')));
+      if (usersSnap && !usersSnap.empty) {
+        usersSnap.forEach(docSnap => {
+          const fbUser = docSnap.data();
+          const targetId = fbUser.id || fbUser.uid || docSnap.id;
+          const existing = users.find(u => u.id === targetId || u.uid === targetId || (fbUser.email && u.email?.toLowerCase() === fbUser.email?.toLowerCase()));
+          if (existing) {
+            Object.assign(existing, fbUser);
+          } else {
+            users.push({ ...fbUser, id: targetId, uid: fbUser.uid || targetId });
+          }
+        });
+        console.log(`[Firebase Server] Synced ${usersSnap.size} user profiles from Firestore.`);
+      }
+    } catch (err) {
+      console.warn('[Firebase Server] Warning syncing users from Firestore:', err);
+    }
+
     // Auto-heal any invalid mixkit links from Firestore immediately on-the-fly
     await sanitizeMixkitUrls();
 
@@ -1619,7 +1701,6 @@ export function saveData() {
       dishes,
       videos,
       orders,
-      currentUserSession: null,
       formulas,
       restaurateurs,
       restaurateurMedia,
@@ -2496,8 +2577,6 @@ export function loadData() {
       if (data.dishes) dishes = data.dishes.filter((d: any) => !deletedDishIds.includes(d.id) && !deletedRestaurantIds.includes(d.restaurantId));
       if (data.videos) videos = data.videos.filter((v: any) => !deletedVideoIds.includes(v.id) && !deletedRestaurantIds.includes(v.restaurantId));
       if (data.orders) orders = data.orders.filter((o: any) => !deletedOrderIds.includes(o.id));
-      // Note: currentUserSession remains null on boot for security so visitors land unauthenticated
-      currentUserSession = null;
       if (data.formulas) formulas = data.formulas;
       if (data.restaurateurs) restaurateurs = data.restaurateurs.filter((r: any) => !deletedBoutiqueIds.includes(r.id));
       if (data.restaurateurMedia) restaurateurMedia = data.restaurateurMedia.filter((m: any) => !deletedMediaIds.includes(m.id));
@@ -2809,38 +2888,36 @@ async function startServer() {
 
   // 0. User Authentication flow (Sign-Up, Login, Logout, Reset Password, Me)
   app.get('/admin', (req, res) => {
-    let adminUser = users.find(u => u.email === 'sybis.co@gmail.com');
-    if (!adminUser) {
-      adminUser = { id: 'usr-admin-1', email: 'sybis.co@gmail.com', role: 'admin' };
-      users.push(adminUser);
-    } else {
-      adminUser.role = 'admin';
-    }
-    currentUserSession = adminUser;
     res.redirect('/?admin=true');
   });
 
-  app.get('/api/auth/me', (req, res) => {
-    const { uid, email } = req.query;
-    if (!currentUserSession && (uid || email)) {
-      const match = users.find(u => 
-        (uid && (u.id === uid || u.uid === uid)) ||
-        (email && u.email?.toLowerCase() === String(email).toLowerCase())
-      );
-      if (match) {
-        currentUserSession = match;
+  app.get('/api/auth/me', async (req, res) => {
+    let reqUser = getRequestUser(req);
+    if (reqUser && db && !isFirestoreUnreachable && (reqUser.uid || reqUser.id)) {
+      try {
+        const uId = reqUser.uid || reqUser.id;
+        const uDoc = await runFirestoreOp('get user profile', () => getDoc(doc(db, 'users', uId)));
+        if (uDoc && uDoc.exists()) {
+          const fbProfile = uDoc.data();
+          const target = users.find(u => u.id === uId || u.uid === uId);
+          if (target) {
+            Object.assign(target, fbProfile);
+            reqUser = target;
+          } else {
+            users.push({ ...fbProfile, id: uId, uid: fbProfile.uid || uId });
+            reqUser = fbProfile;
+          }
+        }
+      } catch (err) {
+        // Fallback gracefully to reqUser
       }
     }
-    if (currentUserSession && currentUserSession.email?.toLowerCase() === 'sybis.co@gmail.com') {
-      currentUserSession.role = 'admin';
-    }
-    res.json({ user: currentUserSession });
+    res.json({ user: sanitizeUser(reqUser) });
   });
 
   app.post('/api/auth/signup', async (req, res) => {
     const { 
       email, 
-      password, 
       role, 
       fullName, 
       phone, 
@@ -2849,12 +2926,15 @@ async function startServer() {
       cuisineType, 
       siret, 
       vehicle, 
-      zone, 
-      adminPasskey 
+      zone
     } = req.body;
 
-    if (!email || !password) {
-      return res.status(400).json({ error: 'Email et mot de passe requis.' });
+    if (!email) {
+      return res.status(400).json({ error: 'Email requis.' });
+    }
+
+    if (role === 'admin') {
+      return res.status(403).json({ error: 'Création directe de compte administrateur non autorisée.' });
     }
 
     const lowerEmail = email.toLowerCase().trim();
@@ -2862,12 +2942,8 @@ async function startServer() {
       return res.status(400).json({ error: 'Cet email est déjà enregistré.' });
     }
 
-    const isSuperAdminEmail = lowerEmail === 'sybis.co@gmail.com';
-    let assignedRole: 'client' | 'restaurant' | 'courier' | 'admin' = 'client';
-
-    if (isSuperAdminEmail) {
-      assignedRole = 'admin';
-    } else if (role === 'restaurant') {
+    let assignedRole: 'client' | 'restaurant' | 'courier' = 'client';
+    if (role === 'restaurant') {
       assignedRole = 'restaurant';
     } else if (role === 'courier') {
       assignedRole = 'courier';
@@ -2879,7 +2955,6 @@ async function startServer() {
       id: req.body.uid || genId('usr'),
       uid: req.body.uid || undefined,
       email: lowerEmail,
-      password: password,
       role: assignedRole,
       fullName: fullName || lowerEmail.split('@')[0],
       phone: phone || '',
@@ -2889,13 +2964,12 @@ async function startServer() {
       cuisineType: cuisineType || '',
       vehicle: vehicle || '',
       zone: zone || '',
-      verificationStatus: (assignedRole === 'client' || assignedRole === 'admin') ? 'verified' : 'pending',
+      verificationStatus: assignedRole === 'client' ? 'verified' : 'pending',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
 
     users.push(newUser);
-    currentUserSession = newUser;
 
     // If signed up as restaurateur, automatically bootstrap a custom restaurant profile
     if (newUser.role === 'restaurant') {
@@ -2981,40 +3055,23 @@ async function startServer() {
     }
 
     saveData();
-    res.status(201).json({ success: true, user: newUser });
+    res.status(201).json({ success: true, user: sanitizeUser(newUser) });
   });
 
   app.post('/api/auth/login', (req, res) => {
-    const { email, password } = req.body;
-    if (!email || !password) {
-      return res.status(400).json({ error: 'Email et mot de passe requis.' });
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ error: 'Email requis.' });
     }
 
     const lowerEmail = email.toLowerCase().trim();
-    let user = users.find(u => u.email.toLowerCase() === lowerEmail);
+    const user = users.find(u => u.email.toLowerCase() === lowerEmail);
 
     if (!user) {
-      // If super admin email attempts login, automatically create super admin account if missing
-      if (lowerEmail === 'sybis.co@gmail.com') {
-        user = {
-          id: 'usr-admin-sybis',
-          email: 'sybis.co@gmail.com',
-          role: 'admin',
-          fullName: 'Super Administrateur Sybis'
-        };
-        users.push(user);
-      } else {
-        return res.status(404).json({ error: 'Aucun utilisateur trouvé avec cet email. Veuillez vous enregistrer.' });
-      }
+      return res.status(404).json({ error: 'Aucun utilisateur trouvé avec cet email. Veuillez vous enregistrer.' });
     }
 
-    if (lowerEmail === 'sybis.co@gmail.com' && user.role !== 'admin') {
-      user.role = 'admin';
-    }
-
-    currentUserSession = user;
-    saveData();
-    res.json({ success: true, user });
+    res.json({ success: true, user: sanitizeUser(user) });
   });
 
   app.post('/api/auth/google', async (req, res) => {
@@ -3025,13 +3082,10 @@ async function startServer() {
       }
 
       const lowerEmail = String(email).toLowerCase().trim();
-      const isSuperAdmin = lowerEmail === 'sybis.co@gmail.com';
       let user = users.find(u => u.email.toLowerCase() === lowerEmail);
 
       if (!user) {
-        const assignedRole = isSuperAdmin 
-          ? 'admin' 
-          : (role === 'restaurant' ? 'restaurant' : role === 'courier' ? 'courier' : role === 'admin' ? 'client' : 'client');
+        const assignedRole = (role === 'restaurant' ? 'restaurant' : role === 'courier' ? 'courier' : 'client');
 
         user = {
           id: req.body.uid || genId('usr'),
@@ -3046,7 +3100,7 @@ async function startServer() {
           cuisineType: '',
           vehicle: '',
           zone: '',
-          verificationStatus: (assignedRole === 'client' || assignedRole === 'admin') ? 'verified' : 'pending',
+          verificationStatus: assignedRole === 'client' ? 'verified' : 'pending',
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
         };
@@ -3134,30 +3188,23 @@ async function startServer() {
             });
           }
         }
-      } else {
-        if (isSuperAdmin && user.role !== 'admin') {
-          user.role = 'admin';
-        }
       }
 
-      currentUserSession = user;
       saveData();
-      return res.json({ success: true, user });
+      return res.json({ success: true, user: sanitizeUser(user) });
     } catch (err: any) {
       console.error('[Google Auth Error]:', err);
       const fallbackUser = {
         id: genId('usr'),
         email: (req.body?.email || 'user@fidfud.app').toLowerCase().trim(),
-        role: req.body?.email?.toLowerCase() === 'sybis.co@gmail.com' ? 'admin' : (req.body?.role || 'client'),
+        role: req.body?.role === 'restaurant' ? 'restaurant' : req.body?.role === 'courier' ? 'courier' : 'client',
         fullName: req.body?.fullName || 'Utilisateur Google'
       };
-      currentUserSession = fallbackUser;
-      return res.json({ success: true, user: fallbackUser });
+      return res.json({ success: true, user: sanitizeUser(fallbackUser) });
     }
   });
 
   app.post('/api/auth/logout', (req, res) => {
-    currentUserSession = null;
     res.json({ success: true });
   });
 
@@ -3186,7 +3233,8 @@ async function startServer() {
       return res.status(400).json({ error: 'Le nouveau mot de passe doit contenir au moins 6 caractères.' });
     }
 
-    const activeUserId = userId || currentUserSession?.id;
+    const reqUser = getRequestUser(req);
+    const activeUserId = userId || reqUser?.id;
     if (!activeUserId) {
       return res.status(401).json({ error: 'Vous devez être connecté pour modifier votre mot de passe.' });
     }
@@ -3290,7 +3338,8 @@ async function startServer() {
   // 2a. User Favorite Restaurants (Follow/Unfollow)
   app.get('/api/users/:userId/favorites', (req, res) => {
     const { userId } = req.params;
-    const user = users.find(u => u.id === userId || u.email.toLowerCase() === userId.toLowerCase()) || currentUserSession;
+    const reqUser = getRequestUser(req);
+    const user = users.find(u => u.id === userId || u.email.toLowerCase() === userId.toLowerCase()) || (reqUser && (reqUser.id === userId || reqUser.email?.toLowerCase() === userId.toLowerCase()) ? reqUser : null);
     if (!user) {
       return res.json({ success: true, savedRestaurantIds: [], restaurants: [] });
     }
@@ -3317,8 +3366,9 @@ async function startServer() {
 
       let user = users.find(u => u.id === userId || u.email.toLowerCase() === userId.toLowerCase());
       if (!user) {
-        if (currentUserSession) {
-          user = currentUserSession;
+        const reqUser = getRequestUser(req);
+        if (reqUser && (reqUser.id === userId || reqUser.email?.toLowerCase() === userId.toLowerCase())) {
+          user = reqUser;
         } else {
           // Auto-provision demo / guest user
           user = {
@@ -3375,11 +3425,12 @@ async function startServer() {
   app.post('/api/restaurants/:restaurantId/follow', async (req, res) => {
     try {
       const { restaurantId } = req.params;
-      const userId = req.body.userId || currentUserSession?.id || 'usr-client-demo';
+      const reqUser = getRequestUser(req);
+      const userId = req.body.userId || reqUser?.id || 'usr-client-demo';
 
       let user = users.find(u => u.id === userId || u.email.toLowerCase() === userId.toLowerCase());
       if (!user) {
-        user = currentUserSession || {
+        user = (reqUser && (reqUser.id === userId || reqUser.email?.toLowerCase() === userId.toLowerCase())) ? reqUser : {
           id: userId,
           email: `${userId}@fidfud.ai`,
           role: 'client',
@@ -5472,13 +5523,18 @@ Make sure the output is 100% valid JSON and coordinates are realistic numbers wi
 
   // Get users database (Admin CMS)
   app.get('/api/users', (req, res) => {
-    res.json(users);
+    res.json(users.map(sanitizeUser));
   });
 
-  // Delete user (Admin CMS)
+  // Delete user (Admin CMS - Protected)
   app.delete('/api/users/:id', async (req, res) => {
     const { id } = req.params;
-    const idx = users.findIndex(u => u.id === id);
+    const reqUser = getRequestUser(req);
+    if (!reqUser || reqUser.role !== 'admin') {
+      return res.status(403).json({ error: "Privilèges administrateur requis pour supprimer un utilisateur." });
+    }
+
+    const idx = users.findIndex(u => u.id === id || u.uid === id);
     if (idx !== -1) {
       const [deleted] = users.splice(idx, 1);
       if (db) {
@@ -5489,32 +5545,47 @@ Make sure the output is 100% valid JSON and coordinates are realistic numbers wi
         }
       }
       saveData();
-      return res.json(deleted);
+      return res.json(sanitizeUser(deleted));
     }
     res.status(404).json({ error: "Utilisateur non trouvé" });
   });
 
-  // Update user role, status, and profile details (Admin CMS)
+  // Update user role, status, and profile details (Admin CMS - Protected)
   app.put('/api/users/:id', async (req, res) => {
     const { id } = req.params;
     const { role, status, phone, address, fullName, password, siret, restaurantName, cuisineType, vehicle, zone, verificationStatus } = req.body;
+    const reqUser = getRequestUser(req);
     const user = users.find(u => u.id === id || u.uid === id);
     if (!user) {
       return res.status(404).json({ error: "Utilisateur non trouvé" });
     }
 
-    if (role !== undefined) user.role = role;
-    if (status !== undefined) user.status = status;
+    const isOwner = reqUser && (reqUser.id === user.id || reqUser.uid === user.id || reqUser.id === id || reqUser.uid === id);
+    const isAdmin = reqUser && reqUser.role === 'admin';
+
+    // Must be either owner or admin to update
+    if (!isOwner && !isAdmin) {
+      return res.status(403).json({ error: "Accès refusé. Vous devez être connecté pour modifier ce profil." });
+    }
+
+    // Role elevation or role modification CANNOT be done by non-admins!
+    if (role !== undefined && role !== user.role) {
+      if (!isAdmin) {
+        return res.status(403).json({ error: "Modification de rôle non autorisée. Seul un administrateur peut modifier les rôles." });
+      }
+      user.role = role;
+    }
+
+    if (status !== undefined && isAdmin) user.status = status;
     if (phone !== undefined) user.phone = phone;
     if (address !== undefined) user.address = address;
     if (fullName !== undefined) user.fullName = fullName;
-    if (password !== undefined) user.password = password;
     if (siret !== undefined) user.siret = siret;
     if (restaurantName !== undefined) user.restaurantName = restaurantName;
     if (cuisineType !== undefined) user.cuisineType = cuisineType;
     if (vehicle !== undefined) user.vehicle = vehicle;
     if (zone !== undefined) user.zone = zone;
-    if (verificationStatus !== undefined) user.verificationStatus = verificationStatus;
+    if (verificationStatus !== undefined && isAdmin) user.verificationStatus = verificationStatus;
     user.updatedAt = new Date().toISOString();
 
     // If upgraded to restaurant and doesn't have a restaurant profile yet, create one
@@ -6336,11 +6407,12 @@ Réponds UNIQUEMENT avec le texte final prêt à être publié, sans guillemets 
       return res.status(400).json({ error: 'Le commentaire ne peut pas être vide.' });
     }
 
+    const reqUser = getRequestUser(req);
     const newComment: Comment = {
       id: genId('cmt'),
       videoId,
-      userId: userId || currentUserSession?.id || 'usr-anonymous',
-      userEmail: userEmail || currentUserSession?.email || 'anonyme@fidfud.app',
+      userId: userId || reqUser?.id || 'usr-anonymous',
+      userEmail: userEmail || reqUser?.email || 'anonyme@fidfud.app',
       text: text.trim(),
       createdAt: new Date().toISOString()
     };
@@ -6536,7 +6608,8 @@ Réponds UNIQUEMENT avec le texte final prêt à être publié, sans guillemets 
     const calculatedEuro = euroValue !== undefined ? Number(euroValue) : Number((ptsToSend / 100).toFixed(2));
     const finalEuroValue = calculatedEuro > 0 ? calculatedEuro : (ptsToSend > 0 ? ptsToSend / 100 : 1.00);
 
-    const uId = userId || currentUserSession?.id;
+    const reqUser = getRequestUser(req);
+    const uId = userId || reqUser?.id;
     if (!uId) {
       return res.status(401).json({ error: 'Vous devez être connecté pour envoyer un cadeau.' });
     }
@@ -6579,7 +6652,7 @@ Réponds UNIQUEMENT avec le texte final prêt à être publié, sans guillemets 
       id: genId('tip'),
       videoId,
       userId: uId,
-      userEmail: userEmail || currentUserSession?.email || 'anonyme@fidfud.app',
+      userEmail: userEmail || reqUser?.email || 'anonyme@fidfud.app',
       restaurantId: videoObj.restaurantId,
       icon: icon || '🌸',
       pointsSent: ptsToSend > 0 ? ptsToSend : 100,
@@ -6673,14 +6746,15 @@ Réponds UNIQUEMENT avec le texte final prêt à être publié, sans guillemets 
       dishObj = dishes.find(d => d.id === dishId);
     }
 
+    const reqUser = getRequestUser(req);
     const newReview: Review = {
       id: genId('rev'),
       restaurantId,
       restaurantName: rest.name,
       dishId: dishId || undefined,
       dishName: dishObj ? dishObj.name : undefined,
-      userName: (userName || currentUserSession?.email?.split('@')[0] || 'Client Gourmand').trim(),
-      userEmail: userEmail || currentUserSession?.email || undefined,
+      userName: (userName || reqUser?.fullName || reqUser?.email?.split('@')[0] || 'Client Gourmand').trim(),
+      userEmail: userEmail || reqUser?.email || undefined,
       userAvatar: userAvatar || undefined,
       rating: Math.min(5, Math.max(1, Math.round(numRating * 10) / 10)),
       title: title ? title.trim() : undefined,
@@ -6752,14 +6826,15 @@ Réponds UNIQUEMENT avec le texte final prêt à être publié, sans guillemets 
       return res.status(400).json({ error: 'La note doit être comprise entre 1 et 5 étoiles.' });
     }
 
+    const reqUser = getRequestUser(req);
     const newReview: Review = {
       id: genId('rev'),
       restaurantId: dish.restaurantId,
       restaurantName: rest ? rest.name : undefined,
       dishId,
       dishName: dish.name,
-      userName: (userName || currentUserSession?.email?.split('@')[0] || 'Client Gourmand').trim(),
-      userEmail: userEmail || currentUserSession?.email || undefined,
+      userName: (userName || reqUser?.fullName || reqUser?.email?.split('@')[0] || 'Client Gourmand').trim(),
+      userEmail: userEmail || reqUser?.email || undefined,
       userAvatar: userAvatar || undefined,
       rating: Math.min(5, Math.max(1, Math.round(numRating * 10) / 10)),
       title: title ? title.trim() : undefined,
@@ -6985,7 +7060,8 @@ Réponds UNIQUEMENT avec le texte final prêt à être publié, sans guillemets 
   app.post('/api/restaurants/:restaurantId/subscribe', (req, res) => {
     const { restaurantId } = req.params;
     const { userId } = req.body;
-    const uId = userId || currentUserSession?.id;
+    const reqUser = getRequestUser(req);
+    const uId = userId || reqUser?.id;
 
     if (!uId) {
       return res.status(401).json({ error: 'Vous devez être connecté pour vous abonner.' });
@@ -7022,7 +7098,8 @@ Réponds UNIQUEMENT avec le texte final prêt à être publié, sans guillemets 
     const { restaurantId } = req.params;
     const { userId, userEmail, date, time, guests, notes } = req.body;
 
-    const uId = userId || currentUserSession?.id;
+    const reqUser = getRequestUser(req);
+    const uId = userId || reqUser?.id;
     if (!uId) {
       return res.status(401).json({ error: 'Vous devez être connecté pour réserver.' });
     }
@@ -7037,7 +7114,7 @@ Réponds UNIQUEMENT avec le texte final prêt à être publié, sans guillemets 
     const newRes: Reservation = {
       id: genId('resv'),
       userId: uId,
-      userEmail: userEmail || currentUserSession?.email || 'anonyme@fidfud.app',
+      userEmail: userEmail || reqUser?.email || 'anonyme@fidfud.app',
       restaurantId,
       restaurantName: rName,
       date,
@@ -7530,13 +7607,14 @@ Réponds UNIQUEMENT avec le texte final prêt à être publié, sans guillemets 
         user = {
           id: genId('usr'),
           email: lowerEmail,
-          password: 'Password123!',
           role: targetRole as any,
           fullName: appItem.applicantName,
           phone: appItem.phone,
           address: appItem.city,
           siret: appItem.siret || '',
-          createdAt: new Date().toISOString()
+          verificationStatus: 'verified',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
         };
         users.push(user);
       } else {
