@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { X, Lock, Mail, User, ShieldAlert, KeyRound, AlertCircle, CheckCircle, ChefHat, Truck, ShieldCheck, Building, Phone, MapPin, FileText, Compass, Eye, EyeOff, Sparkles } from 'lucide-react';
-import { getFirebaseAuth, getFirebaseDB, isFirestoreQuotaExhausted, handleQuotaExhausted } from '../lib/firebase';
+import { getFirebaseAuth, getFirebaseDB, isFirestoreQuotaExhausted, handleQuotaExhausted, safeSetDoc, safeGetDoc } from '../lib/firebase';
 import { 
   signInWithPopup, 
   GoogleAuthProvider, 
@@ -8,13 +8,14 @@ import {
   signInWithEmailAndPassword, 
   sendPasswordResetEmail 
 } from 'firebase/auth';
-import { doc, setDoc, getDoc } from 'firebase/firestore';
+import { doc } from 'firebase/firestore';
 import AddressAutocomplete from './AddressAutocomplete';
+import { User as UserType } from '../types';
 
 interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onAuthSuccess: (user: { id: string; email: string; role: 'client' | 'restaurant' | 'admin' | 'courier'; fullName?: string }) => void;
+  onAuthSuccess: (user: UserType) => void;
   initialMode?: 'login' | 'signup' | 'forgot_password';
   designSettings?: any;
 }
@@ -57,18 +58,6 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess, initialMode 
 
   if (!isOpen) return null;
 
-  // Auto-fill convenience helper for easy registration on desktop
-  const handleAutoFillQuickProfile = () => {
-    if (!email) setEmail('sybis.co@gmail.com');
-    if (!fullName) setFullName('Sybis Admin User');
-    if (!phone) setPhone('06 12 34 56 78');
-    if (!address) setAddress('10 Rue Saint-Honoré, 75001 Paris');
-    if (!password) setPassword('Password123!');
-    if (!restaurantName) setRestaurantName('Bistro Sybis Gastronomie');
-    setSuccessMsg('⚡ Informations pré-remplies avec succès !');
-    setTimeout(() => setSuccessMsg(null), 2500);
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
@@ -93,11 +82,10 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess, initialMode 
     const auth = getFirebaseAuth();
     const db = getFirebaseDB();
     const lowerEmail = email.toLowerCase().trim();
-    const isSuperAdminEmail = lowerEmail === 'sybis.co@gmail.com';
 
     try {
       if (mode === 'signup') {
-        const assignedRole = isSuperAdminEmail ? 'admin' : role;
+        const assignedRole: UserRole = role; // Strictly 'client' | 'restaurant' | 'courier'
         let firebaseUid = `usr-${Date.now()}`;
 
         // 1. Create user in Firebase Authentication
@@ -107,15 +95,21 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess, initialMode 
             firebaseUid = userCred.user.uid;
           } catch (authErr: any) {
             if (authErr.code === 'auth/email-already-in-use') {
-              // Fallback to signIn if already exists or throw helpful message
-              throw new Error('Cet email est déjà enregistré avec un compte Firebase Auth. Veuillez vous connecter.');
+              throw new Error('Cet email est déjà enregistré. Veuillez vous connecter.');
+            } else if (authErr.code === 'auth/weak-password') {
+              throw new Error('Le mot de passe doit comporter au moins 6 caractères.');
+            } else if (authErr.code === 'auth/invalid-email') {
+              throw new Error('Format d’adresse email invalide.');
             }
-            console.warn('[Firebase Auth] Sign up error, proceeding with session sync:', authErr?.message);
+            console.warn('[Firebase Auth] Sign up notice:', authErr?.message);
           }
         }
 
         // 2. Persist user profile to Firestore
+        const now = new Date().toISOString();
+        const verificationStatus = (assignedRole === 'client' ? 'verified' : 'pending') as 'pending' | 'verified' | 'rejected';
         const userProfile = {
+          uid: firebaseUid,
           id: firebaseUid,
           email: lowerEmail,
           role: assignedRole,
@@ -127,48 +121,57 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess, initialMode 
           cuisineType: cuisineType || '',
           vehicle: vehicle || '',
           zone: zone || '',
-          createdAt: new Date().toISOString()
+          verificationStatus,
+          createdAt: now,
+          updatedAt: now
         };
 
         if (db && !isFirestoreQuotaExhausted()) {
-          try {
-            await setDoc(doc(db, 'users', firebaseUid), userProfile);
-          } catch (fsErr: any) {
-            if (fsErr?.code === 'resource-exhausted' || String(fsErr?.message || '').includes('quota')) {
-              handleQuotaExhausted();
-            } else {
-              console.warn('[Firestore Users] Notice saving user doc:', fsErr?.message || fsErr);
-            }
-          }
+          await safeSetDoc(doc(db, 'users', firebaseUid), userProfile);
         }
 
         // 3. Sync with backend API
-        const res = await fetch('/api/auth/signup', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
-            email: lowerEmail, 
-            password, 
-            role: assignedRole,
-            fullName,
-            phone,
-            address,
-            restaurantName,
-            cuisineType,
-            siret,
-            vehicle,
-            zone,
-            uid: firebaseUid
-          })
-        });
+        try {
+          const res = await fetch('/api/auth/signup', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+              email: lowerEmail, 
+              role: assignedRole,
+              fullName,
+              phone,
+              address,
+              restaurantName,
+              cuisineType,
+              siret,
+              vehicle,
+              zone,
+              uid: firebaseUid
+            })
+          });
 
-        const data = await res.json();
-        if (!res.ok) {
-          throw new Error(data.error || 'Erreur lors de la création de compte.');
+          if (res.ok) {
+            const data = await res.json();
+            if (data?.user) {
+              userProfile.id = data.user.id || userProfile.id;
+            }
+          }
+        } catch (apiErr) {
+          console.warn('[Backend Auth Sync] Notice:', apiErr);
         }
 
-        onAuthSuccess(data.user || userProfile);
-        setSuccessMsg('Compte créé avec succès ! Bienvenue sur Fidfud.');
+        try {
+          localStorage.setItem('fidfud_user', JSON.stringify(userProfile));
+        } catch (e) {}
+
+        onAuthSuccess(userProfile);
+        setSuccessMsg(
+          assignedRole === 'client' 
+            ? 'Compte client créé avec succès ! Bienvenue sur Fidfud.' 
+            : assignedRole === 'restaurant'
+              ? 'Compte restaurateur créé avec succès ! Votre dossier est en attente de vérification.'
+              : 'Compte livreur créé avec succès ! Votre dossier est en attente de vérification.'
+        );
         setTimeout(() => onClose(), 1000);
 
       } else if (mode === 'login') {
@@ -180,37 +183,60 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess, initialMode 
             const userCred = await signInWithEmailAndPassword(auth, lowerEmail, password);
             firebaseUid = userCred.user.uid;
           } catch (authErr: any) {
-            console.warn('[Firebase Auth] Sign in error, checking backend:', authErr?.message);
-          }
-        }
-
-        // 2. Sync with backend API
-        const res = await fetch('/api/auth/login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: lowerEmail, password })
-        });
-
-        const data = await res.json();
-        if (!res.ok) {
-          throw new Error(data.error || 'Identifiants incorrects ou utilisateur introuvable.');
-        }
-
-        const userObj = data.user;
-
-        // If user profile doc in Firestore exists, load it
-        if (firebaseUid && db) {
-          try {
-            const uDoc = await getDoc(doc(db, 'users', firebaseUid));
-            if (uDoc.exists()) {
-              const uData = uDoc.data();
-              userObj.role = uData.role || userObj.role;
-              userObj.fullName = uData.fullName || userObj.fullName;
+            console.warn('[Firebase Auth] Sign in notice:', authErr?.message);
+            if (authErr.code === 'auth/wrong-password' || authErr.code === 'auth/invalid-credential') {
+              throw new Error('Mot de passe incorrect ou compte introuvable.');
+            } else if (authErr.code === 'auth/user-not-found') {
+              throw new Error('Aucun compte trouvé avec cet email. Veuillez vous inscrire.');
+            } else if (authErr.code === 'auth/too-many-requests') {
+              throw new Error('Trop de tentatives. Veuillez patienter ou réinitialiser votre mot de passe.');
             }
-          } catch (e) {
-            console.warn('[Firestore Users] Doc read failed:', e);
           }
         }
+
+        // 2. Load persistent profile from Firestore
+        let userObj: any = null;
+        if (firebaseUid && db && !isFirestoreQuotaExhausted()) {
+          const uDoc = await safeGetDoc(doc(db, 'users', firebaseUid));
+          if (uDoc && uDoc.exists()) {
+            userObj = { id: firebaseUid, uid: firebaseUid, ...uDoc.data() };
+          }
+        }
+
+        // 3. Sync with backend API
+        try {
+          const res = await fetch('/api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: lowerEmail, password, uid: firebaseUid })
+          });
+
+          if (res.ok) {
+            const data = await res.json();
+            if (data?.user) {
+              userObj = { ...data.user, ...(userObj || {}) };
+            }
+          } else if (!userObj) {
+            const errData = await res.json().catch(() => ({}));
+            throw new Error(errData.error || 'Identifiants incorrects ou utilisateur introuvable.');
+          }
+        } catch (apiErr: any) {
+          if (!userObj) throw apiErr;
+        }
+
+        if (!userObj) {
+          userObj = {
+            id: firebaseUid || `usr-${Date.now()}`,
+            uid: firebaseUid || `usr-${Date.now()}`,
+            email: lowerEmail,
+            role: 'client',
+            fullName: lowerEmail.split('@')[0]
+          };
+        }
+
+        try {
+          localStorage.setItem('fidfud_user', JSON.stringify(userObj));
+        } catch (e) {}
 
         onAuthSuccess(userObj);
         setSuccessMsg('Connexion réussie !');
@@ -222,6 +248,9 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess, initialMode 
             await sendPasswordResetEmail(auth, lowerEmail);
           } catch (resetErr: any) {
             console.warn('[Firebase Reset Password]:', resetErr?.message);
+            if (resetErr.code === 'auth/user-not-found') {
+              throw new Error('Aucun compte n’est associé à cette adresse email.');
+            }
           }
         }
 
@@ -229,7 +258,7 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess, initialMode 
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email: lowerEmail })
-        });
+        }).catch(() => {});
 
         setSuccessMsg(`Un email de réinitialisation de mot de passe a été envoyé à ${lowerEmail} !`);
         setEmail('');
@@ -251,101 +280,93 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess, initialMode 
       let googleDisplayName = '';
       let googleUid = '';
 
-      // Try Client-Side Firebase Auth Popup
-      try {
-        const auth = getFirebaseAuth();
-        if (auth) {
-          const provider = new GoogleAuthProvider();
-          provider.setCustomParameters({ prompt: 'select_account' });
-          const result = await signInWithPopup(auth, provider);
-          if (result.user && result.user.email) {
-            googleUserEmail = result.user.email;
-            googleDisplayName = result.user.displayName || '';
-            googleUid = result.user.uid;
-          }
-        }
-      } catch (popupErr: any) {
-        console.warn("Firebase Google popup bypassed or restricted:", popupErr?.message || popupErr);
+      const auth = getFirebaseAuth();
+      if (!auth) {
+        throw new Error("Le service d'authentification n'est pas initialisé.");
       }
 
-      // Fallback: If popup was blocked or closed in sandboxed iframe, prompt or use current email input
-      if (!googleUserEmail) {
-        if (email && email.includes('@')) {
-          googleUserEmail = email;
-          googleDisplayName = fullName || email.split('@')[0];
-        } else {
-          const promptedEmail = window.prompt("Connexion Google (Aperçu) : Entrez votre adresse Gmail / Google :", "sybis.co@gmail.com");
-          if (!promptedEmail || !promptedEmail.includes('@')) {
-            setIsSubmitting(false);
-            return;
-          }
-          googleUserEmail = promptedEmail.trim();
-          googleDisplayName = promptedEmail.split('@')[0];
+      try {
+        const provider = new GoogleAuthProvider();
+        provider.setCustomParameters({ prompt: 'select_account' });
+        const result = await signInWithPopup(auth, provider);
+        if (result.user && result.user.email) {
+          googleUserEmail = result.user.email;
+          googleDisplayName = result.user.displayName || '';
+          googleUid = result.user.uid;
         }
+      } catch (popupErr: any) {
+        console.warn("Firebase Google popup notice:", popupErr?.message || popupErr);
+        if (popupErr.code === 'auth/popup-closed-by-user') {
+          throw new Error("La fenêtre de connexion Google a été fermée.");
+        } else if (popupErr.code === 'auth/popup-blocked') {
+          throw new Error("La fenêtre Google a été bloquée par le navigateur. Veuillez autoriser les fenêtres pop-up.");
+        } else {
+          throw new Error(popupErr.message || "Erreur lors de la connexion Google.");
+        }
+      }
+
+      if (!googleUserEmail || !googleUid) {
+        throw new Error("Échec de la récupération des données de connexion Google.");
       }
 
       const lowerEmail = googleUserEmail.toLowerCase().trim();
-      const assignedRole = lowerEmail === 'sybis.co@gmail.com' ? 'admin' : role;
-
-      // If we have a Google UID, persist user profile to Firestore
       const db = getFirebaseDB();
-      if (googleUid && db && !isFirestoreQuotaExhausted()) {
-        try {
-          await setDoc(doc(db, 'users', googleUid), {
-            id: googleUid,
-            email: lowerEmail,
-            role: assignedRole,
-            fullName: googleDisplayName || lowerEmail.split('@')[0],
-            createdAt: new Date().toISOString()
-          }, { merge: true });
-        } catch (fsErr: any) {
-          if (fsErr?.code === 'resource-exhausted' || String(fsErr?.message || '').includes('quota')) {
-            handleQuotaExhausted();
-          } else {
-            console.warn('[Firestore Users] Google user doc notice:', fsErr?.message || fsErr);
-          }
+      let resolvedUser: any = null;
+
+      // 1. Check if user already exists in Firestore (preserve existing role)
+      if (db && !isFirestoreQuotaExhausted()) {
+        const uDoc = await safeGetDoc(doc(db, 'users', googleUid));
+        if (uDoc && uDoc.exists()) {
+          resolvedUser = { id: googleUid, uid: googleUid, ...uDoc.data() };
         }
       }
 
-      // Sync user session to backend with resilient fallback
-      let resolvedUser: any = null;
+      // 2. If new user, create persistent profile in Firestore
+      if (!resolvedUser) {
+        const now = new Date().toISOString();
+        const initialRole: UserRole = role; // 'client' | 'restaurant' | 'courier'
+        resolvedUser = {
+          id: googleUid,
+          uid: googleUid,
+          email: lowerEmail,
+          role: initialRole,
+          fullName: googleDisplayName || lowerEmail.split('@')[0],
+          phone: '',
+          address: '',
+          siret: '',
+          restaurantName: '',
+          cuisineType: '',
+          vehicle: '',
+          zone: '',
+          verificationStatus: (initialRole === 'client' ? 'verified' : 'pending') as 'pending' | 'verified' | 'rejected',
+          createdAt: now,
+          updatedAt: now
+        };
+
+        if (db && !isFirestoreQuotaExhausted()) {
+          await safeSetDoc(doc(db, 'users', googleUid), resolvedUser);
+        }
+      }
+
+      // 3. Sync user session to backend API
       try {
-        const res = await fetch('/api/auth/google', {
+        await fetch('/api/auth/google', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             email: lowerEmail,
-            fullName: googleDisplayName,
-            role: role,
+            fullName: resolvedUser.fullName,
+            role: resolvedUser.role,
             uid: googleUid
           })
         });
-
-        if (res.ok) {
-          const data = await res.json();
-          if (data && data.user) {
-            resolvedUser = data.user;
-          }
-        }
       } catch (fetchErr) {
-        console.warn('[Google Auth Sync] Server sync fallback (offline/iframe mode):', fetchErr);
-      }
-
-      // If server response was not available or fetch blipped, build reliable client user session
-      if (!resolvedUser) {
-        resolvedUser = {
-          id: googleUid || `usr-${Date.now()}`,
-          email: lowerEmail,
-          role: assignedRole,
-          fullName: googleDisplayName || lowerEmail.split('@')[0]
-        };
+        console.warn('[Google Auth Sync] Server session notice:', fetchErr);
       }
 
       try {
         localStorage.setItem('fidfud_user', JSON.stringify(resolvedUser));
-      } catch (e) {
-        console.warn('LocalStorage save warning:', e);
-      }
+      } catch (e) {}
 
       onAuthSuccess(resolvedUser);
       setSuccessMsg(`Connexion Google réussie (${lowerEmail}) !`);
@@ -355,12 +376,7 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess, initialMode 
 
     } catch (err: any) {
       console.error("Google Auth error:", err);
-      // If error message is network-related, show friendly notice
-      if (err?.message?.includes('Failed to fetch') || err?.message?.includes('network')) {
-        setErrorMsg('Connexion établie en mode hors-ligne. Veuillez réessayer.');
-      } else {
-        setErrorMsg(err.message || 'Une erreur est survenue lors de la connexion Google.');
-      }
+      setErrorMsg(err.message || 'Une erreur est survenue lors de la connexion Google.');
     } finally {
       setIsSubmitting(false);
     }
@@ -482,20 +498,6 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess, initialMode 
                 <span>Livreur</span>
               </button>
             </div>
-          </div>
-        )}
-
-        {/* Quick Autofill Helper for Fast Signup */}
-        {mode === 'signup' && (
-          <div className="mb-3 flex justify-end">
-            <button
-              type="button"
-              onClick={handleAutoFillQuickProfile}
-              className="text-[10px] font-mono font-bold text-[#FF5C00] bg-[#FF5C00]/10 border border-[#FF5C00]/30 hover:bg-[#FF5C00]/20 px-3 py-1 rounded-full transition-all flex items-center gap-1 cursor-pointer"
-            >
-              <Sparkles size={12} />
-              <span>Remplissage automatique rapide</span>
-            </button>
           </div>
         )}
 
@@ -700,6 +702,20 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess, initialMode 
                       />
                     </div>
                   </div>
+
+                  <div className="space-y-1 mt-2">
+                    <label className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider font-sans flex items-center justify-between">
+                      <span>Numéro SIRET / Licence Livreur</span>
+                      <span className="text-[9px] text-zinc-500 font-normal">(Optionnel)</span>
+                    </label>
+                    <input 
+                      type="text" 
+                      value={siret}
+                      onChange={(e) => setSiret(e.target.value)}
+                      placeholder="800 123 456 00012 (Facultatif)" 
+                      className="w-full bg-zinc-950/70 border border-white/5 rounded-2xl py-2.5 px-3.5 text-xs text-white placeholder-zinc-600 focus:outline-none focus:border-[#FF5C00]/50 transition-colors font-mono"
+                    />
+                  </div>
                 </div>
               )}
             </>
@@ -721,7 +737,7 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess, initialMode 
                 autoComplete="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="sybis.co@gmail.com" 
+                placeholder="exemple@email.com" 
                 className="w-full bg-zinc-950/70 border border-white/5 rounded-2xl py-2.5 pl-10 pr-4 text-xs text-white placeholder-zinc-600 focus:outline-none focus:border-[#FF5C00]/50 transition-colors"
               />
             </div>

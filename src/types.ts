@@ -26,16 +26,24 @@ export interface MerchantApplication {
 }
 
 export type UserRole = 'client' | 'restaurant' | 'admin' | 'courier';
+export type VerificationStatus = 'pending' | 'verified' | 'rejected';
 
 export interface User {
   id: string;
+  uid?: string;
   email: string;
   role: UserRole;
   fullName?: string;
   phone?: string;
   address?: string;
   siret?: string;
+  restaurantName?: string;
+  cuisineType?: string;
+  vehicle?: 'Velo' | 'Scooter' | 'Voiture' | 'Trottinette' | string;
+  zone?: string;
+  verificationStatus?: VerificationStatus;
   createdAt?: string;
+  updatedAt?: string;
   savedRestaurantIds?: string[];
   favoriteRestaurantIds?: string[];
 }

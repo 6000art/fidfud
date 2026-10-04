@@ -151,13 +151,10 @@ export const handleQuotaExhausted = async () => {
   }
 };
 
-export async function testConnection() {
-  if (isClientQuotaExhausted) return;
+export async function safeGetDoc(docRef: any): Promise<any | null> {
+  if (isClientQuotaExhausted) return null;
   try {
-    const database = getFirebaseDB();
-    if (database) {
-      await getDoc(doc(database, 'test', 'connection'));
-    }
+    return await getDoc(docRef);
   } catch (error: any) {
     const isQuota = error && (
       error.code === 'resource-exhausted' ||
@@ -167,7 +164,47 @@ export async function testConnection() {
     );
     if (isQuota) {
       await handleQuotaExhausted();
+      return null;
     }
+    console.warn('[Firebase Client] safeGetDoc warning:', error?.message || error);
+    return null;
+  }
+}
+
+export async function safeSetDoc(docRef: any, data: any, options?: any): Promise<boolean> {
+  if (isClientQuotaExhausted) return false;
+  try {
+    if (options) {
+      await setDoc(docRef, data, options);
+    } else {
+      await setDoc(docRef, data);
+    }
+    return true;
+  } catch (error: any) {
+    const isQuota = error && (
+      error.code === 'resource-exhausted' ||
+      error.code === 8 ||
+      String(error.message || '').toLowerCase().includes('quota') ||
+      String(error.message || '').toLowerCase().includes('exhausted')
+    );
+    if (isQuota) {
+      await handleQuotaExhausted();
+      return false;
+    }
+    console.warn('[Firebase Client] safeSetDoc warning:', error?.message || error);
+    return false;
+  }
+}
+
+export async function testConnection() {
+  // Silent verification without generating artificial quota burn
+  if (isClientQuotaExhausted) return;
+  try {
+    const database = getFirebaseDB();
+    if (!database) return;
+    // Database reference ready
+  } catch (error: any) {
+    console.warn('[Firebase Client] Connection readiness notice:', error?.message || error);
   }
 }
 

@@ -33,9 +33,9 @@ import FavoritesDrawer from './components/FavoritesDrawer';
 import { SavesHistoryModal } from './components/SavesHistoryModal';
 import TasteProfileModal from './components/TasteProfileModal';
 import { offlineCacheService } from './services/OfflineCacheService';
-import { Video, Restaurant, Dish, Order, CartItem, SupplementOption, FeedSortOrder } from './types';
-import { AlertCircle, Trash2, X, ShieldAlert, Key, ChevronLeft, ChevronRight, Home as HomeIcon, Plus, LayoutGrid, Bell, User, Video as VideoIcon, Tv, Truck, Disc, Search, ShoppingBag, Sliders, MousePointer, ShieldCheck, Users, Save, History, RotateCcw, Clock, Check } from 'lucide-react';
-import { getFirebaseAuth, getFirebaseDB, testConnection, isFirestoreQuotaExhausted, handleQuotaExhausted } from './lib/firebase';
+import { Video, Restaurant, Dish, Order, CartItem, SupplementOption, FeedSortOrder, User } from './types';
+import { AlertCircle, Trash2, X, ShieldAlert, Key, ChevronLeft, ChevronRight, Home as HomeIcon, Plus, LayoutGrid, Bell, User as UserIcon, Video as VideoIcon, Tv, Truck, Disc, Search, ShoppingBag, Sliders, MousePointer, ShieldCheck, Users, Save, History, RotateCcw, Clock, Check } from 'lucide-react';
+import { getFirebaseAuth, getFirebaseDB, testConnection, isFirestoreQuotaExhausted, handleQuotaExhausted, safeGetDoc } from './lib/firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 
@@ -53,7 +53,13 @@ export default function App() {
   const [currentRole, setCurrentRole] = useState<'client' | 'restaurant' | 'courier'>('client');
   
   // User Session & Auth States
-  const [user, setUser] = useState<{ id: string; email: string; role: 'client' | 'restaurant' | 'admin' | 'courier' } | null>(null);
+  const [user, setUser] = useState<User | null>(() => {
+    try {
+      const saved = localStorage.getItem('fidfud_user');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return null;
+  });
   const [isAuthOpen, setIsAuthOpen] = useState<boolean>(false);
   const [authModalInitialMode, setAuthModalInitialMode] = useState<'login' | 'signup' | 'forgot_password'>('login');
   
@@ -460,15 +466,19 @@ export default function App() {
   };
 
   // Fetch current user session
-  const fetchSession = async () => {
+  const fetchSession = async (firebaseUid?: string, email?: string) => {
     try {
-      const res = await fetch('/api/auth/me');
+      const queryParam = firebaseUid ? `?uid=${encodeURIComponent(firebaseUid)}` : email ? `?email=${encodeURIComponent(email)}` : '';
+      const res = await fetch(`/api/auth/me${queryParam}`);
       if (res.ok) {
         const text = await res.text();
         try {
           const data = JSON.parse(text);
           if (data && data.user) {
             setUser(data.user);
+            try {
+              localStorage.setItem('fidfud_user', JSON.stringify(data.user));
+            } catch {}
           } else {
             // Keep active admin or merchant user in local session if server session cookie is unset
             setUser(prev => (prev && (prev.role === 'admin' || (prev.role as string) === 'merchant')) ? prev : null);
@@ -623,29 +633,37 @@ export default function App() {
           try {
             const db = getFirebaseDB();
             if (db && !isFirestoreQuotaExhausted()) {
-              const uDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
-              if (uDoc.exists()) {
+              const uDoc = await safeGetDoc(doc(db, 'users', firebaseUser.uid));
+              if (uDoc && uDoc.exists()) {
                 const uData = uDoc.data();
-                setUser({
+                const resolvedUser: User = {
                   id: firebaseUser.uid,
+                  uid: firebaseUser.uid,
                   email: firebaseUser.email || uData.email,
                   role: uData.role || (firebaseUser.email?.toLowerCase() === 'sybis.co@gmail.com' ? 'admin' : 'client'),
                   fullName: uData.fullName || firebaseUser.displayName || '',
                   phone: uData.phone || '',
                   address: uData.address || '',
-                  siret: uData.siret || ''
-                } as any);
+                  siret: uData.siret || '',
+                  restaurantName: uData.restaurantName || '',
+                  cuisineType: uData.cuisineType || '',
+                  vehicle: uData.vehicle || '',
+                  zone: uData.zone || '',
+                  verificationStatus: uData.verificationStatus || 'verified',
+                  createdAt: uData.createdAt,
+                  updatedAt: uData.updatedAt
+                };
+                setUser(resolvedUser);
+                try {
+                  localStorage.setItem('fidfud_user', JSON.stringify(resolvedUser));
+                } catch {}
                 return;
               }
             }
           } catch (e: any) {
-            if (e?.code === 'resource-exhausted' || String(e?.message || '').includes('quota')) {
-              handleQuotaExhausted();
-            } else {
-              console.warn('[Firebase Auth State] Notice fetching user doc:', e?.message || e);
-            }
+            console.warn('[Firebase Auth State] Notice fetching user doc:', e?.message || e);
           }
-          await fetchSession();
+          await fetchSession(firebaseUser.uid, firebaseUser.email || undefined);
         }
       });
       return () => unsubscribe();
@@ -780,10 +798,22 @@ export default function App() {
     setCart([]);
   };
 
-  const handleAuthSuccess = (authUser: { id: string; email: string; role: 'client' | 'restaurant' | 'admin' }) => {
+  const handleAuthSuccess = (authUser: User) => {
     setUser(authUser);
+    try {
+      localStorage.setItem('fidfud_user', JSON.stringify(authUser));
+    } catch {}
     // Automatically switch view modes depending on user role for fluid UX
-    setCurrentRole(authUser.role === 'restaurant' ? 'restaurant' : 'client');
+    if (authUser.role === 'restaurant') {
+      setCurrentRole('restaurant');
+    } else if (authUser.role === 'courier') {
+      setCurrentRole('courier');
+    } else {
+      setCurrentRole('client');
+    }
+    if (authUser.role === 'admin' || authUser.email?.toLowerCase() === 'sybis.co@gmail.com') {
+      setIsAdminCMSOpen(true);
+    }
     refreshAllData();
   };
 
@@ -797,6 +827,9 @@ export default function App() {
     } catch (err) {
       console.error('Logout error:', err);
     }
+    try {
+      localStorage.removeItem('fidfud_user');
+    } catch {}
     setUser(null);
     setCurrentRole('client');
     setCart([]); // Clear cart to prevent cross-account leakage

@@ -1852,7 +1852,7 @@ export default function AdminCMS({
   }, [isOpen]);
 
   if (!isOpen) return null;
-  const isUserAdmin = user && (user.role === 'admin' || user.email?.toLowerCase() === 'sybis.co@gmail.com');
+  const isUserAdmin = Boolean(user && user.role === 'admin');
   if (!isUserAdmin) return null;
 
   // File Drop Handlers

@@ -5,13 +5,15 @@ import {
   Award, Sparkles, Gift, Coins, Copy, Check, ShoppingBag, TrendingUp, 
   ChevronDown, ChevronUp, Star 
 } from 'lucide-react';
-import { Order, UserRewardClaim } from '../types';
+import { Order, UserRewardClaim, User as UserType } from '../types';
+import { safeSetDoc, getFirebaseDB } from '../lib/firebase';
+import { doc } from 'firebase/firestore';
 import { notify } from '../utils/notify';
 
 interface ProfileModalProps {
   isOpen: boolean;
   onClose: () => void;
-  user: { id: string; email: string; role: 'client' | 'restaurant' | 'admin' | 'courier' } | null;
+  user: UserType | null;
   orders?: Order[];
   onOpenAuth: () => void;
   onLogout: () => void;
@@ -52,6 +54,68 @@ export default function ProfileModal({
   const [newPassword, setNewPassword] = useState('');
   const [passwordMsg, setPasswordMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [isSubmittingPassword, setIsSubmittingPassword] = useState(false);
+
+  // Profile Edit State
+  const [showEditProfile, setShowEditProfile] = useState(false);
+  const [editFullName, setEditFullName] = useState(user?.fullName || '');
+  const [editPhone, setEditPhone] = useState(user?.phone || '');
+  const [editAddress, setEditAddress] = useState(user?.address || '');
+  const [editSiret, setEditSiret] = useState(user?.siret || '');
+  const [editVehicle, setEditVehicle] = useState((user?.vehicle as any) || 'Velo');
+  const [editZone, setEditZone] = useState(user?.zone || '');
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+
+  useEffect(() => {
+    if (user) {
+      setEditFullName(user.fullName || '');
+      setEditPhone(user.phone || '');
+      setEditAddress(user.address || '');
+      setEditSiret(user.siret || '');
+      setEditVehicle((user.vehicle as any) || 'Velo');
+      setEditZone(user.zone || '');
+    }
+  }, [user]);
+
+  const handleSaveProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user) return;
+    setIsSavingProfile(true);
+    try {
+      const payload: any = {
+        fullName: editFullName,
+        phone: editPhone,
+        address: editAddress,
+        siret: editSiret,
+        vehicle: editVehicle,
+        zone: editZone
+      };
+
+      await fetch(`/api/users/${user.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      const db = getFirebaseDB();
+      if (db && user.id) {
+        await safeSetDoc(doc(db, 'users', user.id), {
+          ...payload,
+          updatedAt: new Date().toISOString()
+        }, { merge: true });
+      }
+
+      const updatedUser = { ...user, ...payload, updatedAt: new Date().toISOString() };
+      try {
+        localStorage.setItem('fidfud_user', JSON.stringify(updatedUser));
+      } catch {}
+      notify("Profil mis à jour", "Vos coordonnées ont été enregistrées avec succès.", "success");
+      setShowEditProfile(false);
+    } catch {
+      notify("Erreur", "Impossible de mettre à jour le profil.", "warn");
+    } finally {
+      setIsSavingProfile(false);
+    }
+  };
 
   // Loyalty System state
   const [pointsBalance, setPointsBalance] = useState<number>(500);
@@ -276,15 +340,120 @@ export default function ProfileModal({
                   <div className="flex items-center gap-2">
                     <span className="w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse shrink-0"></span>
                     <span className="text-xs font-black uppercase font-mono tracking-wider truncate max-w-[170px]">
-                      {getUsername(user.email)}
+                      {user.fullName || getUsername(user.email)}
                     </span>
                   </div>
-                  <span className="text-[9px] bg-[#FF5C00]/25 text-[#FF5C00] border border-[#FF5C00]/30 font-black px-2 py-0.5 rounded-full uppercase tracking-wider font-mono">
-                    {user.role}
-                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[9px] bg-[#FF5C00]/25 text-[#FF5C00] border border-[#FF5C00]/30 font-black px-2 py-0.5 rounded-full uppercase tracking-wider font-mono">
+                      {user.role}
+                    </span>
+                    {user.verificationStatus === 'verified' ? (
+                      <span className="text-[8px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-bold px-1.5 py-0.5 rounded-full">
+                        ✓ Vérifié
+                      </span>
+                    ) : user.role !== 'client' ? (
+                      <span className="text-[8px] bg-amber-500/20 text-amber-400 border border-amber-500/30 font-bold px-1.5 py-0.5 rounded-full">
+                        ⏳ En attente
+                      </span>
+                    ) : null}
+                  </div>
                 </div>
                 <p className="text-[11px] text-zinc-400 truncate">{user.email}</p>
+                {user.phone && <p className="text-[10px] text-zinc-500">📞 {user.phone}</p>}
+                {user.address && <p className="text-[10px] text-zinc-500 truncate">📍 {user.address}</p>}
+                {user.restaurantName && <p className="text-[10px] text-amber-400/90">🏪 {user.restaurantName}</p>}
+                {user.vehicle && <p className="text-[10px] text-blue-400/90">🛵 {user.vehicle} {user.zone ? `• ${user.zone}` : ''}</p>}
                 
+                {/* Profile Edit Toggle */}
+                {!showEditProfile ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowEditProfile(true)}
+                    className="w-full mt-1 py-1.5 px-3 rounded-xl bg-white/5 hover:bg-white/10 text-zinc-300 hover:text-white text-[10px] font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer border border-white/5"
+                  >
+                    <User size={12} className="text-[#FF5C00]" />
+                    <span>Modifier mes coordonnées</span>
+                  </button>
+                ) : (
+                  <form onSubmit={handleSaveProfile} className="mt-2 space-y-2.5 p-3 rounded-xl bg-zinc-950 border border-white/10">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-black uppercase text-zinc-400 font-mono">Mes Coordonnées</span>
+                      <button 
+                        type="button"
+                        onClick={() => setShowEditProfile(false)}
+                        className="text-[9px] text-zinc-500 hover:text-zinc-300 cursor-pointer"
+                      >
+                        Fermer
+                      </button>
+                    </div>
+                    <div>
+                      <label className="text-[9px] text-zinc-400 font-bold uppercase block mb-1">Nom complet</label>
+                      <input 
+                        type="text"
+                        value={editFullName}
+                        onChange={(e) => setEditFullName(e.target.value)}
+                        className="w-full bg-zinc-900 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-[#FF5C00]"
+                        placeholder="Votre nom"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[9px] text-zinc-400 font-bold uppercase block mb-1">Téléphone</label>
+                      <input 
+                        type="tel"
+                        value={editPhone}
+                        onChange={(e) => setEditPhone(e.target.value)}
+                        className="w-full bg-zinc-900 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-[#FF5C00]"
+                        placeholder="06 12 34 56 78"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[9px] text-zinc-400 font-bold uppercase block mb-1">Adresse</label>
+                      <input 
+                        type="text"
+                        value={editAddress}
+                        onChange={(e) => setEditAddress(e.target.value)}
+                        className="w-full bg-zinc-900 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-[#FF5C00]"
+                        placeholder="Votre adresse de livraison"
+                      />
+                    </div>
+                    {user.role === 'courier' && (
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-[9px] text-zinc-400 font-bold uppercase block mb-1">Véhicule</label>
+                          <select 
+                            value={editVehicle}
+                            onChange={(e) => setEditVehicle(e.target.value)}
+                            className="w-full bg-zinc-900 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-[#FF5C00]"
+                          >
+                            <option value="Velo">Vélo</option>
+                            <option value="Scooter">Scooter</option>
+                            <option value="Voiture">Voiture</option>
+                            <option value="Trottinette">Trottinette</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-[9px] text-zinc-400 font-bold uppercase block mb-1">Zone / Ville</label>
+                          <input 
+                            type="text"
+                            value={editZone}
+                            onChange={(e) => setEditZone(e.target.value)}
+                            className="w-full bg-zinc-900 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-[#FF5C00]"
+                            placeholder="Paris"
+                          />
+                        </div>
+                      </div>
+                    )}
+                    <button
+                      type="submit"
+                      disabled={isSavingProfile}
+                      className="w-full py-2 rounded-lg bg-[#FF5C00] hover:bg-[#FF7A00] text-white text-[10px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 disabled:opacity-50 cursor-pointer mt-1"
+                    >
+                      {isSavingProfile ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle size={12} />}
+                      <span>Enregistrer</span>
+                    </button>
+                  </form>
+                )}
+
                 {/* Password modification form */}
                 {!showPasswordForm ? (
                   <button
@@ -745,8 +914,8 @@ export default function ProfileModal({
                 </button>
               )}
 
-              {/* Admin CMS controller inside profile modal (Only for super-administrator) */}
-              {(user?.role === 'admin' || user?.email?.toLowerCase() === 'sybis.co@gmail.com') && (
+              {/* Admin CMS controller inside profile modal (Only for administrator) */}
+              {user?.role === 'admin' && (
                 <button
                   onClick={() => {
                     onOpenAdmin();

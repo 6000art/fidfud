@@ -2821,6 +2821,16 @@ async function startServer() {
   });
 
   app.get('/api/auth/me', (req, res) => {
+    const { uid, email } = req.query;
+    if (!currentUserSession && (uid || email)) {
+      const match = users.find(u => 
+        (uid && (u.id === uid || u.uid === uid)) ||
+        (email && u.email?.toLowerCase() === String(email).toLowerCase())
+      );
+      if (match) {
+        currentUserSession = match;
+      }
+    }
     if (currentUserSession && currentUserSession.email?.toLowerCase() === 'sybis.co@gmail.com') {
       currentUserSession.role = 'admin';
     }
@@ -2866,7 +2876,8 @@ async function startServer() {
     }
 
     const newUser: any = {
-      id: genId('usr'),
+      id: req.body.uid || genId('usr'),
+      uid: req.body.uid || undefined,
       email: lowerEmail,
       password: password,
       role: assignedRole,
@@ -2874,7 +2885,13 @@ async function startServer() {
       phone: phone || '',
       address: address || '',
       siret: siret || '',
-      createdAt: new Date().toISOString()
+      restaurantName: restaurantName || '',
+      cuisineType: cuisineType || '',
+      vehicle: vehicle || '',
+      zone: zone || '',
+      verificationStatus: (assignedRole === 'client' || assignedRole === 'admin') ? 'verified' : 'pending',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
     };
 
     users.push(newUser);
@@ -3017,10 +3034,21 @@ async function startServer() {
           : (role === 'restaurant' ? 'restaurant' : role === 'courier' ? 'courier' : role === 'admin' ? 'client' : 'client');
 
         user = {
-          id: genId('usr'),
+          id: req.body.uid || genId('usr'),
+          uid: req.body.uid || undefined,
           email: lowerEmail,
           role: assignedRole,
-          fullName: fullName || lowerEmail.split('@')[0]
+          fullName: fullName || lowerEmail.split('@')[0],
+          phone: '',
+          address: '',
+          siret: '',
+          restaurantName: '',
+          cuisineType: '',
+          vehicle: '',
+          zone: '',
+          verificationStatus: (assignedRole === 'client' || assignedRole === 'admin') ? 'verified' : 'pending',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
         };
         users.push(user);
 
@@ -5469,8 +5497,8 @@ Make sure the output is 100% valid JSON and coordinates are realistic numbers wi
   // Update user role, status, and profile details (Admin CMS)
   app.put('/api/users/:id', async (req, res) => {
     const { id } = req.params;
-    const { role, status, phone, address, fullName, password } = req.body;
-    const user = users.find(u => u.id === id);
+    const { role, status, phone, address, fullName, password, siret, restaurantName, cuisineType, vehicle, zone, verificationStatus } = req.body;
+    const user = users.find(u => u.id === id || u.uid === id);
     if (!user) {
       return res.status(404).json({ error: "Utilisateur non trouvé" });
     }
@@ -5481,6 +5509,13 @@ Make sure the output is 100% valid JSON and coordinates are realistic numbers wi
     if (address !== undefined) user.address = address;
     if (fullName !== undefined) user.fullName = fullName;
     if (password !== undefined) user.password = password;
+    if (siret !== undefined) user.siret = siret;
+    if (restaurantName !== undefined) user.restaurantName = restaurantName;
+    if (cuisineType !== undefined) user.cuisineType = cuisineType;
+    if (vehicle !== undefined) user.vehicle = vehicle;
+    if (zone !== undefined) user.zone = zone;
+    if (verificationStatus !== undefined) user.verificationStatus = verificationStatus;
+    user.updatedAt = new Date().toISOString();
 
     // If upgraded to restaurant and doesn't have a restaurant profile yet, create one
     if (role === 'restaurant') {
