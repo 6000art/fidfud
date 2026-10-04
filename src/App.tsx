@@ -469,17 +469,17 @@ export default function App() {
   const fetchSession = async () => {
     try {
       const auth = getFirebaseAuth();
-      let token = '';
-      if (auth?.currentUser) {
-        token = await auth.currentUser.getIdToken().catch(() => '');
+      if (!auth?.currentUser) {
+        return;
+      }
+      const token = await auth.currentUser.getIdToken().catch(() => '');
+      if (!token) {
+        return;
       }
 
-      const headers: Record<string, string> = {};
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      } else if (user?.id) {
-        headers['x-user-id'] = user.id;
-      }
+      const headers: Record<string, string> = {
+        'Authorization': `Bearer ${token}`
+      };
 
       const res = await fetch('/api/auth/me', { headers });
       if (res.ok) {
@@ -495,6 +495,12 @@ export default function App() {
         } catch (jsonErr) {
           console.warn('Non-JSON response from /api/auth/me:', jsonErr);
         }
+      } else if (res.status === 401) {
+        // Token invalid or revoked - clear user
+        setUser(null);
+        try {
+          localStorage.removeItem('fidfud_user');
+        } catch {}
       }
     } catch (err: any) {
       console.warn('[Fidfud Session] Session not loaded:', err?.message || err);

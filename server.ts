@@ -5,6 +5,8 @@ import { GoogleGenAI, Type } from '@google/genai';
 import multer from 'multer';
 import fs from 'fs';
 import Stripe from 'stripe';
+import { initializeApp as initAdminApp, cert, getApps as getAdminApps, App as AdminApp } from 'firebase-admin/app';
+import { getAuth as getAdminAuth, Auth as AdminAuth } from 'firebase-admin/auth';
 import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, getDocs, setDoc, doc, deleteDoc, getDoc, setLogLevel, disableNetwork, terminate, writeBatch } from 'firebase/firestore';
 
@@ -146,56 +148,142 @@ try {
   }
 } catch (e) {}
 
-// Firebase token verification and user authentication helpers
-function verifyFirebaseToken(token: string): { uid: string; email?: string } | null {
+// ==========================================
+// FIREBASE ADMIN SDK & CRYPTOGRAPHIC TOKEN VERIFICATION
+// ==========================================
+let adminApp: AdminApp | null = null;
+let adminAuth: AdminAuth | null = null;
+
+function getFirebaseAdminAuth(): AdminAuth | null {
+  if (adminAuth) return adminAuth;
   try {
-    if (!token || typeof token !== 'string') return null;
-    const parts = token.split('.');
-    if (parts.length !== 3) return null;
-    const payloadJson = Buffer.from(parts[1], 'base64').toString('utf8');
-    const payload = JSON.parse(payloadJson);
-    
-    // Check expiration timestamp
-    const now = Math.floor(Date.now() / 1000);
-    if (payload.exp && payload.exp < now) {
-      return null;
-    }
-    
-    // Check issuer and audience against Firebase project
-    const projectId = firebaseConfig?.projectId || "gen-lang-client-0442526754";
-    if (payload.aud && payload.aud !== projectId) {
-      return null;
-    }
-    if (payload.iss && payload.iss !== `https://securetoken.google.com/${projectId}`) {
-      return null;
+    const existingApps = getAdminApps();
+    if (existingApps.length > 0) {
+      adminApp = existingApps[0];
+      adminAuth = getAdminAuth(adminApp);
+      return adminAuth;
     }
 
-    const uid = payload.sub || payload.user_id;
-    if (!uid) return null;
-    return { uid, email: payload.email };
-  } catch (err) {
+    const projectId = process.env.FIREBASE_PROJECT_ID || firebaseConfig?.projectId || "gen-lang-client-0442526754";
+    const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
+    const rawPrivateKey = process.env.FIREBASE_PRIVATE_KEY;
+
+    if (clientEmail && rawPrivateKey) {
+      const privateKey = rawPrivateKey.replace(/\\n/g, '\n');
+      adminApp = initAdminApp({
+        credential: cert({
+          projectId,
+          clientEmail,
+          privateKey,
+        }),
+        projectId
+      });
+      console.log('[Firebase Admin] Initialized with Service Account cert credentials for project:', projectId);
+    } else {
+      adminApp = initAdminApp({
+        projectId
+      });
+      console.log('[Firebase Admin] Initialized with project ID:', projectId);
+    }
+    adminAuth = getAdminAuth(adminApp);
+    return adminAuth;
+  } catch (err: any) {
+    console.error('[Firebase Admin] Initialization notice:', err?.message || err);
     return null;
   }
 }
 
-function getRequestUser(req: express.Request): any | null {
+// Cryptographic Firebase ID Token verification using official Firebase Admin SDK
+async function verifyFirebaseIdToken(token: string): Promise<{ uid: string; email?: string } | null> {
+  if (!token || typeof token !== 'string') return null;
+  const auth = getFirebaseAdminAuth();
+  if (!auth) {
+    console.error('[Firebase Admin] Auth service unavailable for verifyIdToken');
+    return null;
+  }
+
+  try {
+    const decodedToken = await auth.verifyIdToken(token);
+    if (!decodedToken || !decodedToken.uid) {
+      return null;
+    }
+    return {
+      uid: decodedToken.uid,
+      email: decodedToken.email
+    };
+  } catch (err: any) {
+    console.warn('[Firebase Admin verifyIdToken] Verification failed:', err?.code || err?.message || err);
+    return null;
+  }
+}
+
+// Extract and cryptographically verify the caller's identity from Authorization: Bearer <token>
+async function getAuthenticatedUser(req: express.Request): Promise<any | null> {
   const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    const tokenStr = authHeader.substring(7).trim();
-    const verified = verifyFirebaseToken(tokenStr);
-    if (verified && verified.uid) {
-      const match = users.find(u => u.id === verified.uid || u.uid === verified.uid || (verified.email && u.email?.toLowerCase() === verified.email.toLowerCase()));
-      if (match) return match;
-      return {
-        id: verified.uid,
-        uid: verified.uid,
-        email: verified.email || `${verified.uid}@fidfud.ai`,
-        role: 'client'
-      };
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return null;
+  }
+  const token = authHeader.substring(7).trim();
+  if (!token) {
+    return null;
+  }
+
+  const verified = await verifyFirebaseIdToken(token);
+  if (!verified || !verified.uid) {
+    return null;
+  }
+
+  // Load verified user profile from Firestore users/{uid}
+  let userProfile: any = null;
+  if (db && !isFirestoreUnreachable) {
+    try {
+      const uDoc = await runFirestoreOp('get verified user profile', () => getDoc(doc(db, 'users', verified.uid)));
+      if (uDoc && uDoc.exists()) {
+        userProfile = uDoc.data();
+      }
+    } catch (e) {
+      console.warn('[Firebase Auth] Notice loading user profile from Firestore:', e);
     }
   }
-  return null;
+
+  if (!userProfile) {
+    userProfile = users.find(u => u.id === verified.uid || u.uid === verified.uid);
+  }
+
+  if (userProfile) {
+    const resolved = {
+      ...userProfile,
+      id: verified.uid,
+      uid: verified.uid,
+      email: verified.email || userProfile.email,
+      role: userProfile.role || 'client'
+    };
+    const memIdx = users.findIndex(u => u.id === verified.uid || u.uid === verified.uid);
+    if (memIdx !== -1) {
+      users[memIdx] = resolved;
+    } else {
+      users.push(resolved);
+    }
+    return resolved;
+  }
+
+  // Fallback profile if user exists in Firebase Auth but document is not yet created
+  const defaultProfile = {
+    id: verified.uid,
+    uid: verified.uid,
+    email: verified.email || `${verified.uid}@fidfud.ai`,
+    role: 'client',
+    fullName: verified.email?.split('@')[0] || 'Utilisateur',
+    verificationStatus: 'verified',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+  users.push(defaultProfile);
+  return defaultProfile;
 }
+
+// Alias for getAuthenticatedUser to guarantee full cryptographic verification
+const getRequestUser = getAuthenticatedUser;
 
 function sanitizeUser(u: any): any {
   if (!u) return null;
@@ -2892,27 +2980,61 @@ async function startServer() {
   });
 
   app.get('/api/auth/me', async (req, res) => {
-    let reqUser = getRequestUser(req);
-    if (reqUser && db && !isFirestoreUnreachable && (reqUser.uid || reqUser.id)) {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Non authentifié. Token Firebase manquant.' });
+    }
+
+    const token = authHeader.substring(7).trim();
+    if (!token) {
+      return res.status(401).json({ error: 'Token Firebase invalide.' });
+    }
+
+    const verified = await verifyFirebaseIdToken(token);
+    if (!verified || !verified.uid) {
+      return res.status(401).json({ error: 'Token Firebase invalide, expiré ou signature invalide.' });
+    }
+
+    // UID vérifié cryptographiquement par Firebase Admin SDK
+    let userProfile: any = null;
+    if (db && !isFirestoreUnreachable) {
       try {
-        const uId = reqUser.uid || reqUser.id;
-        const uDoc = await runFirestoreOp('get user profile', () => getDoc(doc(db, 'users', uId)));
+        const uDoc = await runFirestoreOp('get user profile', () => getDoc(doc(db, 'users', verified.uid)));
         if (uDoc && uDoc.exists()) {
-          const fbProfile = uDoc.data();
-          const target = users.find(u => u.id === uId || u.uid === uId);
-          if (target) {
-            Object.assign(target, fbProfile);
-            reqUser = target;
-          } else {
-            users.push({ ...fbProfile, id: uId, uid: fbProfile.uid || uId });
-            reqUser = fbProfile;
-          }
+          userProfile = uDoc.data();
         }
       } catch (err) {
-        // Fallback gracefully to reqUser
+        console.warn('[Auth Me] Firestore read notice:', err);
       }
     }
-    res.json({ user: sanitizeUser(reqUser) });
+
+    if (!userProfile) {
+      userProfile = users.find(u => u.id === verified.uid || u.uid === verified.uid);
+    }
+
+    if (!userProfile) {
+      userProfile = {
+        id: verified.uid,
+        uid: verified.uid,
+        email: verified.email || `${verified.uid}@fidfud.ai`,
+        role: 'client',
+        fullName: verified.email?.split('@')[0] || 'Utilisateur',
+        verificationStatus: 'verified',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      users.push(userProfile);
+    } else {
+      userProfile = {
+        ...userProfile,
+        id: verified.uid,
+        uid: verified.uid,
+        email: verified.email || userProfile.email,
+        role: userProfile.role || 'client'
+      };
+    }
+
+    return res.json({ user: sanitizeUser(userProfile) });
   });
 
   app.post('/api/auth/signup', async (req, res) => {
@@ -3227,14 +3349,14 @@ async function startServer() {
     res.json({ success: true, message: 'Un email de réinitialisation a été envoyé à ' + lowerEmail });
   });
 
-  app.post('/api/auth/change-password', (req, res) => {
+  app.post('/api/auth/change-password', async (req, res) => {
     const { userId, newPassword, currentPassword } = req.body;
     if (!newPassword || newPassword.length < 6) {
       return res.status(400).json({ error: 'Le nouveau mot de passe doit contenir au moins 6 caractères.' });
     }
 
-    const reqUser = getRequestUser(req);
-    const activeUserId = userId || reqUser?.id;
+    const reqUser = await getRequestUser(req);
+    const activeUserId = reqUser?.id || reqUser?.uid || userId;
     if (!activeUserId) {
       return res.status(401).json({ error: 'Vous devez être connecté pour modifier votre mot de passe.' });
     }
@@ -3336,9 +3458,9 @@ async function startServer() {
   });
 
   // 2a. User Favorite Restaurants (Follow/Unfollow)
-  app.get('/api/users/:userId/favorites', (req, res) => {
+  app.get('/api/users/:userId/favorites', async (req, res) => {
     const { userId } = req.params;
-    const reqUser = getRequestUser(req);
+    const reqUser = await getRequestUser(req);
     const user = users.find(u => u.id === userId || u.email.toLowerCase() === userId.toLowerCase()) || (reqUser && (reqUser.id === userId || reqUser.email?.toLowerCase() === userId.toLowerCase()) ? reqUser : null);
     if (!user) {
       return res.json({ success: true, savedRestaurantIds: [], restaurants: [] });
@@ -3366,7 +3488,7 @@ async function startServer() {
 
       let user = users.find(u => u.id === userId || u.email.toLowerCase() === userId.toLowerCase());
       if (!user) {
-        const reqUser = getRequestUser(req);
+        const reqUser = await getRequestUser(req);
         if (reqUser && (reqUser.id === userId || reqUser.email?.toLowerCase() === userId.toLowerCase())) {
           user = reqUser;
         } else {
@@ -3425,7 +3547,7 @@ async function startServer() {
   app.post('/api/restaurants/:restaurantId/follow', async (req, res) => {
     try {
       const { restaurantId } = req.params;
-      const reqUser = getRequestUser(req);
+      const reqUser = await getRequestUser(req);
       const userId = req.body.userId || reqUser?.id || 'usr-client-demo';
 
       let user = users.find(u => u.id === userId || u.email.toLowerCase() === userId.toLowerCase());
@@ -5529,7 +5651,7 @@ Make sure the output is 100% valid JSON and coordinates are realistic numbers wi
   // Delete user (Admin CMS - Protected)
   app.delete('/api/users/:id', async (req, res) => {
     const { id } = req.params;
-    const reqUser = getRequestUser(req);
+    const reqUser = await getRequestUser(req);
     if (!reqUser || reqUser.role !== 'admin') {
       return res.status(403).json({ error: "Privilèges administrateur requis pour supprimer un utilisateur." });
     }
@@ -5554,7 +5676,7 @@ Make sure the output is 100% valid JSON and coordinates are realistic numbers wi
   app.put('/api/users/:id', async (req, res) => {
     const { id } = req.params;
     const { role, status, phone, address, fullName, password, siret, restaurantName, cuisineType, vehicle, zone, verificationStatus } = req.body;
-    const reqUser = getRequestUser(req);
+    const reqUser = await getRequestUser(req);
     const user = users.find(u => u.id === id || u.uid === id);
     if (!user) {
       return res.status(404).json({ error: "Utilisateur non trouvé" });
@@ -6400,18 +6522,18 @@ Réponds UNIQUEMENT avec le texte final prêt à être publié, sans guillemets 
     res.json(videoComments);
   });
 
-  app.post('/api/videos/:videoId/comments', (req, res) => {
+  app.post('/api/videos/:videoId/comments', async (req, res) => {
     const { videoId } = req.params;
     const { text, userId, userEmail } = req.body;
     if (!text || !text.trim()) {
       return res.status(400).json({ error: 'Le commentaire ne peut pas être vide.' });
     }
 
-    const reqUser = getRequestUser(req);
+    const reqUser = await getRequestUser(req);
     const newComment: Comment = {
       id: genId('cmt'),
       videoId,
-      userId: userId || reqUser?.id || 'usr-anonymous',
+      userId: userId || reqUser?.id || reqUser?.uid || 'usr-anonymous',
       userEmail: userEmail || reqUser?.email || 'anonyme@fidfud.app',
       text: text.trim(),
       createdAt: new Date().toISOString()
@@ -6600,7 +6722,7 @@ Réponds UNIQUEMENT avec le texte final prêt à être publié, sans guillemets 
     });
   });
 
-  app.post('/api/videos/:videoId/tip', (req, res) => {
+  app.post('/api/videos/:videoId/tip', async (req, res) => {
     const { videoId } = req.params;
     const { userId, userEmail, icon, points, euroValue } = req.body;
 
@@ -6608,8 +6730,8 @@ Réponds UNIQUEMENT avec le texte final prêt à être publié, sans guillemets 
     const calculatedEuro = euroValue !== undefined ? Number(euroValue) : Number((ptsToSend / 100).toFixed(2));
     const finalEuroValue = calculatedEuro > 0 ? calculatedEuro : (ptsToSend > 0 ? ptsToSend / 100 : 1.00);
 
-    const reqUser = getRequestUser(req);
-    const uId = userId || reqUser?.id;
+    const reqUser = await getRequestUser(req);
+    const uId = reqUser?.id || reqUser?.uid || userId;
     if (!uId) {
       return res.status(401).json({ error: 'Vous devez être connecté pour envoyer un cadeau.' });
     }
@@ -6727,7 +6849,7 @@ Réponds UNIQUEMENT avec le texte final prêt à être publié, sans guillemets 
   });
 
   // Post new review for a restaurant
-  app.post('/api/restaurants/:restaurantId/reviews', (req, res) => {
+  app.post('/api/restaurants/:restaurantId/reviews', async (req, res) => {
     const { restaurantId } = req.params;
     const { userName, userEmail, userAvatar, rating, title, text, dishId } = req.body;
 
@@ -6746,7 +6868,7 @@ Réponds UNIQUEMENT avec le texte final prêt à être publié, sans guillemets 
       dishObj = dishes.find(d => d.id === dishId);
     }
 
-    const reqUser = getRequestUser(req);
+    const reqUser = await getRequestUser(req);
     const newReview: Review = {
       id: genId('rev'),
       restaurantId,
@@ -6810,7 +6932,7 @@ Réponds UNIQUEMENT avec le texte final prêt à être publié, sans guillemets 
   });
 
   // Post new review for a specific dish
-  app.post('/api/dishes/:dishId/reviews', (req, res) => {
+  app.post('/api/dishes/:dishId/reviews', async (req, res) => {
     const { dishId } = req.params;
     const { userName, userEmail, userAvatar, rating, title, text } = req.body;
 
@@ -6826,7 +6948,7 @@ Réponds UNIQUEMENT avec le texte final prêt à être publié, sans guillemets 
       return res.status(400).json({ error: 'La note doit être comprise entre 1 et 5 étoiles.' });
     }
 
-    const reqUser = getRequestUser(req);
+    const reqUser = await getRequestUser(req);
     const newReview: Review = {
       id: genId('rev'),
       restaurantId: dish.restaurantId,
@@ -7057,11 +7179,11 @@ Réponds UNIQUEMENT avec le texte final prêt à être publié, sans guillemets 
     res.json(userSubs);
   });
 
-  app.post('/api/restaurants/:restaurantId/subscribe', (req, res) => {
+  app.post('/api/restaurants/:restaurantId/subscribe', async (req, res) => {
     const { restaurantId } = req.params;
     const { userId } = req.body;
-    const reqUser = getRequestUser(req);
-    const uId = userId || reqUser?.id;
+    const reqUser = await getRequestUser(req);
+    const uId = reqUser?.id || reqUser?.uid || userId;
 
     if (!uId) {
       return res.status(401).json({ error: 'Vous devez être connecté pour vous abonner.' });
@@ -7094,12 +7216,12 @@ Réponds UNIQUEMENT avec le texte final prêt à être publié, sans guillemets 
     res.json(userRes);
   });
 
-  app.post('/api/restaurants/:restaurantId/reservations', (req, res) => {
+  app.post('/api/restaurants/:restaurantId/reservations', async (req, res) => {
     const { restaurantId } = req.params;
     const { userId, userEmail, date, time, guests, notes } = req.body;
 
-    const reqUser = getRequestUser(req);
-    const uId = userId || reqUser?.id;
+    const reqUser = await getRequestUser(req);
+    const uId = reqUser?.id || reqUser?.uid || userId;
     if (!uId) {
       return res.status(401).json({ error: 'Vous devez être connecté pour réserver.' });
     }

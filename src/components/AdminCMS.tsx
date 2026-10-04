@@ -48,6 +48,7 @@ import {
 import { Compass, MapPin, Map as MapIcon, Globe } from 'lucide-react';
 import { APIProvider, Map, AdvancedMarker, InfoWindow } from '@vis.gl/react-google-maps';
 import { Restaurant, Dish, Video, Order, OrderStatus } from '../types';
+import { getAuthBearerHeaders } from '../lib/firebase';
 
 interface AdminCMSProps {
   isOpen: boolean;
@@ -2316,7 +2317,11 @@ export default function AdminCMS({
       "Voulez-vous vraiment supprimer définitivement cet utilisateur de la base de données ?",
       async () => {
         try {
-          const res = await fetch(`/api/users/${id}`, { method: 'DELETE' });
+          const authHeaders = await getAuthBearerHeaders();
+          const res = await fetch(`/api/users/${id}`, { 
+            method: 'DELETE',
+            headers: { ...authHeaders }
+          });
           if (res.ok) {
             setUsersList(prev => prev.filter(u => u.id !== id));
             showFeedbackToast('✨ Utilisateur supprimé avec succès !', 'success');
@@ -2359,9 +2364,10 @@ export default function AdminCMS({
 
   const handleUserRoleChange = async (userId: string, newRole: string) => {
     try {
+      const authHeaders = await getAuthBearerHeaders();
       const res = await fetch(`/api/users/${userId}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
         body: JSON.stringify({ role: newRole })
       });
       if (res.ok) {

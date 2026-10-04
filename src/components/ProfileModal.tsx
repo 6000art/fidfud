@@ -6,7 +6,7 @@ import {
   ChevronDown, ChevronUp, Star 
 } from 'lucide-react';
 import { Order, UserRewardClaim, User as UserType } from '../types';
-import { safeSetDoc, getFirebaseDB } from '../lib/firebase';
+import { safeSetDoc, getFirebaseDB, getAuthBearerHeaders } from '../lib/firebase';
 import { doc } from 'firebase/firestore';
 import { notify } from '../utils/notify';
 
@@ -90,9 +90,10 @@ export default function ProfileModal({
         zone: editZone
       };
 
+      const authHeaders = await getAuthBearerHeaders();
       await fetch(`/api/users/${user.id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
         body: JSON.stringify(payload)
       });
 
@@ -287,9 +288,10 @@ export default function ProfileModal({
     setIsSubmittingPassword(true);
     setPasswordMsg(null);
     try {
+      const authHeaders = await getAuthBearerHeaders();
       const res = await fetch('/api/auth/change-password', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
         body: JSON.stringify({ userId: user?.id, newPassword })
       });
       const data = await res.json();

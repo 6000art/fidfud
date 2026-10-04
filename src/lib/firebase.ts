@@ -85,6 +85,19 @@ export const getFirebaseAuth = () => {
   return auth;
 };
 
+export const getAuthBearerHeaders = async (): Promise<Record<string, string>> => {
+  const authInstance = getFirebaseAuth();
+  if (authInstance?.currentUser) {
+    try {
+      const token = await authInstance.currentUser.getIdToken();
+      if (token) {
+        return { 'Authorization': `Bearer ${token}` };
+      }
+    } catch {}
+  }
+  return {};
+};
+
 export enum OperationType {
   CREATE = 'create',
   UPDATE = 'update',
