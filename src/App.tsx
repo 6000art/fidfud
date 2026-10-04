@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import LazyImage from './components/LazyImage';
 import Header from './components/Header';
 import VideoFeed from './components/VideoFeed';
 import DishDrawer from './components/DishDrawer';
@@ -16,10 +17,27 @@ import BackgroundVideoPlayer from './components/BackgroundVideoPlayer';
 import BackgroundVideoControls from './components/BackgroundVideoControls';
 import WhatnotLiveMarket from './components/WhatnotLiveMarket';
 import WhatnotLiveRoom from './components/WhatnotLiveRoom';
+import DarkStreamingFeed from './components/DarkStreamingFeed';
 import { Home } from './components/Home';
 import { FitfoodIntroSplash } from './components/FitfoodIntroSplash';
-import { Video, Restaurant, Dish, Order, CartItem } from './types';
-import { AlertCircle, Trash2, X, ShieldAlert, Key, ChevronLeft, ChevronRight, Home as HomeIcon, Plus, LayoutGrid, Bell, User } from 'lucide-react';
+import OfflineSyncBanner from './components/OfflineSyncBanner';
+import OfflineDownloadsDrawer from './components/OfflineDownloadsDrawer';
+import GoogleContactsModal from './components/GoogleContactsModal';
+import DJAreaModal from './components/DJAreaModal';
+import PromotionalPopupModal from './components/PromotionalPopupModal';
+import CulinaryShowsModal from './components/CulinaryShowsModal';
+import FoodYouTubersModal from './components/FoodYouTubersModal';
+import RecipeSectionModal from './components/RecipeSectionModal';
+import DownloadAppModal from './components/DownloadAppModal';
+import FavoritesDrawer from './components/FavoritesDrawer';
+import { SavesHistoryModal } from './components/SavesHistoryModal';
+import TasteProfileModal from './components/TasteProfileModal';
+import { offlineCacheService } from './services/OfflineCacheService';
+import { Video, Restaurant, Dish, Order, CartItem, SupplementOption, FeedSortOrder } from './types';
+import { AlertCircle, Trash2, X, ShieldAlert, Key, ChevronLeft, ChevronRight, Home as HomeIcon, Plus, LayoutGrid, Bell, User, Video as VideoIcon, Tv, Truck, Disc, Search, ShoppingBag, Sliders, MousePointer, ShieldCheck, Users, Save, History, RotateCcw, Clock, Check } from 'lucide-react';
+import { getFirebaseAuth, getFirebaseDB, testConnection, isFirestoreQuotaExhausted, handleQuotaExhausted } from './lib/firebase';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { doc, getDoc } from 'firebase/firestore';
 
 export default function App() {
   const [showSplash, setShowSplash] = useState<boolean>(() => {
@@ -35,7 +53,7 @@ export default function App() {
   const [currentRole, setCurrentRole] = useState<'client' | 'restaurant' | 'courier'>('client');
   
   // User Session & Auth States
-  const [user, setUser] = useState<{ id: string; email: string; role: 'client' | 'restaurant' | 'admin' } | null>(null);
+  const [user, setUser] = useState<{ id: string; email: string; role: 'client' | 'restaurant' | 'admin' | 'courier' } | null>(null);
   const [isAuthOpen, setIsAuthOpen] = useState<boolean>(false);
   const [authModalInitialMode, setAuthModalInitialMode] = useState<'login' | 'signup' | 'forgot_password'>('login');
   
@@ -56,6 +74,70 @@ export default function App() {
   const [isCheckoutOpen, setIsCheckoutOpen] = useState<boolean>(false);
   const [isOrdersHistoryOpen, setIsOrdersHistoryOpen] = useState<boolean>(false);
   const [isAdminCMSOpen, setIsAdminCMSOpen] = useState<boolean>(false);
+  const [isSavesHistoryOpen, setIsSavesHistoryOpen] = useState<boolean>(false);
+  const [isAutoSaveEnabled, setIsAutoSaveEnabled] = useState<boolean>(true);
+  const [lastAutoSaveTime, setLastAutoSaveTime] = useState<Date | null>(null);
+  const [isInstantSaving, setIsInstantSaving] = useState<boolean>(false);
+  const [instantSaveToast, setInstantSaveToast] = useState<string | null>(null);
+
+  // Auto-Save background effect (runs every 60 seconds when enabled for admins)
+  useEffect(() => {
+    if (!isAutoSaveEnabled) return;
+    const isAdmin = user && (user.role === 'admin' || user.email?.toLowerCase() === 'sybis.co@gmail.com');
+    if (!isAdmin) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch('/api/admin/backups', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ isAutoSave: true })
+        });
+        if (res.ok) {
+          setLastAutoSaveTime(new Date());
+        }
+      } catch (e) {
+        console.warn('Auto-save background check failed:', e);
+      }
+    }, 60000);
+
+    return () => clearInterval(interval);
+  }, [isAutoSaveEnabled, user]);
+
+  const handleInstantAdminSave = async () => {
+    setIsInstantSaving(true);
+    try {
+      const res = await fetch('/api/admin/backups', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          isAutoSave: false,
+          name: `💾 Sauvegarde Admin Bar (${new Date().toLocaleDateString('fr-FR')} ${new Date().toLocaleTimeString('fr-FR')})`
+        })
+      });
+      if (res.ok) {
+        setInstantSaveToast("💾 Sauvegarde de l'Admin effectuée avec succès (Historique 25 max) !");
+        setTimeout(() => setInstantSaveToast(null), 3500);
+      } else {
+        alert("Erreur lors de la création de la sauvegarde.");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Erreur réseau.");
+    } finally {
+      setIsInstantSaving(false);
+    }
+  };
+
+  const [isContactsModalOpen, setIsContactsModalOpen] = useState<boolean>(false);
+  const [isDJAreaOpen, setIsDJAreaOpen] = useState<boolean>(false);
+  const [isCulinaryShowsOpen, setIsCulinaryShowsOpen] = useState<boolean>(false);
+  const [isFoodYouTubersOpen, setIsFoodYouTubersOpen] = useState<boolean>(false);
+  const [isRecipeSectionOpen, setIsRecipeSectionOpen] = useState<boolean>(false);
+  const [recipeInitialCategory, setRecipeInitialCategory] = useState<string>('all');
+  const [isOfflineDownloadsOpen, setIsOfflineDownloadsOpen] = useState<boolean>(false);
+  const [isDownloadAppModalOpen, setIsDownloadAppModalOpen] = useState<boolean>(false);
+  const [merchantTab, setMerchantTab] = useState<'menu' | 'videos' | 'orders' | 'stripe' | 'vitrine' | 'premium' | 'secu_portefeuille'>('orders');
   const [isAdminTabExpanded, setIsAdminTabExpanded] = useState<boolean>(true);
   const [isLoadingFeed, setIsLoadingFeed] = useState<boolean>(true);
   const [isMobile, setIsMobile] = useState<boolean>(false);
@@ -72,12 +154,36 @@ export default function App() {
   // Lifted Search & Location Overlay States
   const [isSearchDrawerOpen, setIsSearchDrawerOpen] = useState<boolean>(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState<boolean>(false);
+  const [isFavoritesDrawerOpen, setIsFavoritesDrawerOpen] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<string>('');
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [isLocating, setIsLocating] = useState<boolean>(false);
   const [isProximityFirst, setIsProximityFirst] = useState<boolean>(false);
-  const [feedSortOrder, setFeedSortOrder] = useState<'recent' | 'oldest' | 'likes' | 'distance'>('recent');
+  const [feedSortOrder, setFeedSortOrder] = useState<FeedSortOrder>('recommended');
+  const [isTasteProfileModalOpen, setIsTasteProfileModalOpen] = useState<boolean>(false);
+  const [proximityRadius, setProximityRadius] = useState<number>(5);
+  const [isFastLane, setIsFastLane] = useState<boolean>(false);
+  const [maxPrepTimeMinutes, setMaxPrepTimeMinutes] = useState<number>(20);
+  const [selectedDietaryTags, setSelectedDietaryTags] = useState<string[]>([]);
+  const [isAutoPlayEnabled, setIsAutoPlayEnabled] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('fidfud_autoplay_enabled');
+      return saved !== null ? JSON.parse(saved) : true;
+    } catch (e) {
+      return true;
+    }
+  });
+
+  const handleToggleAutoPlay = () => {
+    setIsAutoPlayEnabled(prev => {
+      const next = !prev;
+      try {
+        localStorage.setItem('fidfud_autoplay_enabled', JSON.stringify(next));
+      } catch (e) {}
+      return next;
+    });
+  };
 
   const handleDetectLocation = () => {
     setIsLocating(true);
@@ -134,7 +240,7 @@ export default function App() {
       borderRadius: '16px',
       bannerUrl: 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=1600&auto=format&fit=crop&q=80',
       typography: 'sans', // 'sans' | 'mono' | 'serif' | 'display' or any Google Font family name
-      layoutPreset: 'whatnot', // 'whatnot' | 'immersive' | 'bento' | 'editorial'
+      layoutPreset: 'dark_streaming', // 'dark_streaming' | 'whatnot' | 'immersive' | 'bento' | 'editorial'
       engagementInterval: 20, // customizable engagement interval in seconds
       enableEngagementAnimations: true, // toggle booster prompts on the video feed
       enableFireworks: true, // toggle full-screen fireworks on video likes/tips
@@ -200,13 +306,13 @@ export default function App() {
       const newSettings = { ...prev, ...updated };
       localStorage.setItem('fidfud_design_settings', JSON.stringify(newSettings));
       
-      if (newSettings.autoSaveEnabled) {
-        fetch('/api/design-settings', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(updated)
-        }).catch(err => console.warn('Failed to auto-save design settings:', err));
-      }
+      // Always persist to server immediately so design settings and colors never revert
+      fetch('/api/design-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newSettings)
+      }).catch(err => console.warn('Failed to save design settings:', err));
+
       return newSettings;
     });
   };
@@ -235,6 +341,52 @@ export default function App() {
 
   // Switch Restaurant Basket Conflict Dialog
   const [conflictItem, setConflictItem] = useState<{ dish: Dish; quantity: number } | null>(null);
+
+  // Auto-hide bottom navigation bar on scroll, reappear when scroll stops or on tap/idle
+  const [isBottomNavVisible, setIsBottomNavVisible] = useState<boolean>(true);
+  const hideNavTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      // Disappear on scroll up or down
+      setIsBottomNavVisible(false);
+      if (hideNavTimeoutRef.current) clearTimeout(hideNavTimeoutRef.current);
+      // Reappear when scrolling stops (800ms idle)
+      hideNavTimeoutRef.current = setTimeout(() => {
+        setIsBottomNavVisible(true);
+      }, 800);
+    };
+
+    const handleUserInteraction = () => {
+      setIsBottomNavVisible(true);
+      if (hideNavTimeoutRef.current) clearTimeout(hideNavTimeoutRef.current);
+      hideNavTimeoutRef.current = setTimeout(() => {
+        setIsBottomNavVisible(true);
+      }, 1000);
+    };
+
+    window.addEventListener('scroll', handleScroll, { capture: true, passive: true });
+    window.addEventListener('touchstart', handleUserInteraction, { passive: true });
+    window.addEventListener('mousemove', handleUserInteraction, { passive: true });
+
+    return () => {
+      window.removeEventListener('scroll', handleScroll, { capture: true });
+      window.removeEventListener('touchstart', handleUserInteraction);
+      window.removeEventListener('mousemove', handleUserInteraction);
+      if (hideNavTimeoutRef.current) clearTimeout(hideNavTimeoutRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    const handleNotify = (e: any) => {
+      if (e.detail) {
+        const { title, message, type } = e.detail;
+        addNotification(title, message, type || 'info');
+      }
+    };
+    window.addEventListener('fidfud-notify', handleNotify as EventListener);
+    return () => window.removeEventListener('fidfud-notify', handleNotify as EventListener);
+  }, []);
 
   const addNotification = (title: string, message: string, type: 'info' | 'success' | 'warn' = 'info') => {
     const id = Math.random().toString(36).substring(2, 9);
@@ -318,14 +470,12 @@ export default function App() {
           if (data && data.user) {
             setUser(data.user);
           } else {
-            setUser(null);
+            // Keep active admin or merchant user in local session if server session cookie is unset
+            setUser(prev => (prev && (prev.role === 'admin' || (prev.role as string) === 'merchant')) ? prev : null);
           }
         } catch (jsonErr) {
           console.warn('Non-JSON response from /api/auth/me:', jsonErr);
-          setUser(null);
         }
-      } else {
-        setUser(null);
       }
     } catch (err: any) {
       console.warn('[Fidfud Session] Session not loaded (running in sandbox/offline mode):', err?.message || err);
@@ -333,54 +483,74 @@ export default function App() {
   };
 
   // Fetch complete Fidfud state from server
-  const refreshAllData = async (skipSession = false) => {
+  const refreshAllData = async (skipSession = true) => {
     try {
       // 0. Fetch user session
       if (!skipSession) {
         await fetchSession();
       }
 
-      // 1. Fetch Feed
-      const feedRes = await fetch('/api/feed');
-      if (feedRes.ok) {
-        const text = await feedRes.text();
-        try {
-          const feedData = JSON.parse(text);
-          setVideos(feedData || []);
-        } catch (jsonErr) {
-          console.warn('Non-JSON response from /api/feed:', jsonErr);
+      // 1. Fetch Videos (all videos for management & feed)
+      let currentFeed: Video[] = [];
+      try {
+        const videoRes = await fetch('/api/videos');
+        if (videoRes.ok) {
+          const text = await videoRes.text();
+          currentFeed = JSON.parse(text) || [];
+          const rawFeed = currentFeed || [];
+          const uniqueFeed = Array.from(new Map(rawFeed.map((v: Video) => [v.id, v])).values()) as Video[];
+          setVideos(uniqueFeed);
+          offlineCacheService.saveVideos(uniqueFeed);
+        } else {
+          const feedRes = await fetch('/api/feed');
+          if (feedRes.ok) {
+            const text = await feedRes.text();
+            const rawFeed = (JSON.parse(text) || []) as Video[];
+            const uniqueFeed = Array.from(new Map(rawFeed.map((v: Video) => [v.id, v])).values()) as Video[];
+            setVideos(uniqueFeed);
+            offlineCacheService.saveVideos(uniqueFeed);
+          }
+        }
+      } catch {
+        const cached = await offlineCacheService.getCachedVideos();
+        if (cached && cached.length > 0) {
+          const uniqueCached = Array.from(new Map(cached.map((v: Video) => [v.id, v])).values()) as Video[];
+          setVideos(uniqueCached);
         }
       }
 
-      // 2. Fetch Restaurants
-      const restRes = await fetch('/api/restaurants');
-      if (restRes.ok) {
-        const text = await restRes.text();
-        try {
-          const restData = JSON.parse(text);
-          setRestaurants(restData || []);
+      // 2. Fetch Restaurants & Dishes
+      try {
+        const restRes = await fetch('/api/restaurants');
+        if (restRes.ok) {
+          const text = await restRes.text();
+          const restData = (JSON.parse(text) || []) as Restaurant[];
+          const uniqueRestaurants = Array.from(new Map(restData.map((r: Restaurant) => [r.id, r])).values()) as Restaurant[];
+          setRestaurants(uniqueRestaurants);
+          offlineCacheService.saveRestaurants(uniqueRestaurants);
 
-          // Fetch all dishes for all restaurants in parallel to simplify lookups
-          const dishesPromises = (restData || []).map((r: Restaurant) => 
+          // Fetch all dishes for all restaurants in parallel
+          const dishesPromises = uniqueRestaurants.map((r: Restaurant) => 
             fetch(`/api/restaurants/${r.id}/dishes`)
-              .then(async res => {
-                if (res.ok) {
-                  const t = await res.text();
-                  try {
-                    return JSON.parse(t);
-                  } catch {
-                    return [];
-                  }
-                }
-                return [];
-              })
+              .then(async res => res.ok ? JSON.parse(await res.text()) : [])
               .catch(() => [])
           );
           const dishesLists = await Promise.all(dishesPromises);
           const flattenedDishes = dishesLists.flat() as Dish[];
-          setAllDishes(flattenedDishes);
-        } catch (jsonErr) {
-          console.warn('Non-JSON response from /api/restaurants:', jsonErr);
+          const uniqueDishes = Array.from(new Map(flattenedDishes.map((d: Dish) => [d.id, d])).values()) as Dish[];
+          setAllDishes(uniqueDishes);
+          offlineCacheService.saveDishes(uniqueDishes);
+        } else {
+          throw new Error('Restaurant response not ok');
+        }
+      } catch {
+        const cachedR = await offlineCacheService.getCachedRestaurants();
+        const cachedD = await offlineCacheService.getCachedDishes();
+        if (cachedR && cachedR.length > 0) {
+          setRestaurants(Array.from(new Map(cachedR.map((r: Restaurant) => [r.id, r])).values()) as Restaurant[]);
+        }
+        if (cachedD && cachedD.length > 0) {
+          setAllDishes(Array.from(new Map(cachedD.map((d: Dish) => [d.id, d])).values()) as Dish[]);
         }
       }
 
@@ -441,14 +611,58 @@ export default function App() {
     }
   };
 
-  // Initial load
+  // Initial load & Firebase Auth state synchronization
   useEffect(() => {
+    testConnection();
     refreshAllData();
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('admin') === 'true') {
-      setIsAdminCMSOpen(true);
+
+    const auth = getFirebaseAuth();
+    if (auth) {
+      const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+        if (firebaseUser) {
+          try {
+            const db = getFirebaseDB();
+            if (db && !isFirestoreQuotaExhausted()) {
+              const uDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+              if (uDoc.exists()) {
+                const uData = uDoc.data();
+                setUser({
+                  id: firebaseUser.uid,
+                  email: firebaseUser.email || uData.email,
+                  role: uData.role || (firebaseUser.email?.toLowerCase() === 'sybis.co@gmail.com' ? 'admin' : 'client'),
+                  fullName: uData.fullName || firebaseUser.displayName || '',
+                  phone: uData.phone || '',
+                  address: uData.address || '',
+                  siret: uData.siret || ''
+                } as any);
+                return;
+              }
+            }
+          } catch (e: any) {
+            if (e?.code === 'resource-exhausted' || String(e?.message || '').includes('quota')) {
+              handleQuotaExhausted();
+            } else {
+              console.warn('[Firebase Auth State] Notice fetching user doc:', e?.message || e);
+            }
+          }
+          await fetchSession();
+        }
+      });
+      return () => unsubscribe();
     }
   }, []);
+
+  // Handle URL admin query parameter securely (only open CMS if logged in as admin)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('admin') === 'true') {
+      if (user?.role === 'admin' || user?.email?.toLowerCase() === 'sybis.co@gmail.com') {
+        setIsAdminCMSOpen(true);
+      } else if (!user) {
+        setIsAuthOpen(true);
+      }
+    }
+  }, [user]);
 
   // Periodic automatic polling to achieve "real-time updates" for both orders tracker & clients
   useEffect(() => {
@@ -478,7 +692,7 @@ export default function App() {
   };
 
   // Add Item to cart with single restaurant boundary validation
-  const handleAddToCart = (dish: Dish, quantity: number) => {
+  const handleAddToCart = (dish: Dish, quantity: number, selectedSupplements?: SupplementOption[]) => {
     const restaurant = restaurants.find(r => r.id === dish.restaurantId);
     const restaurantName = restaurant ? restaurant.name : 'Restaurant';
 
@@ -486,20 +700,46 @@ export default function App() {
     if (cart.length > 0 && cart[0].restaurantId !== dish.restaurantId) {
       // Basket Conflict! Store conflict item to trigger confirmation drawer
       setConflictItem({ dish, quantity });
+      addNotification("⚠️ RESTAURANT DIFFÉRENT", `1 seul restaurant par commande ! Votre panier contient déjà des plats de "${cart[0].restaurantName || 'un autre restaurant'}".`, "warn");
+      
+      // Dispatch custom cart-shake event to trigger visual error vibration & boundary alert on all cart icons
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('fidfud:cart-shake', { 
+          detail: { 
+            dish, 
+            quantity, 
+            currentRestaurant: cart[0].restaurantName,
+            attemptedRestaurant: restaurantName 
+          } 
+        }));
+      }
       return;
     }
 
     // Otherwise, add directly
     setCart(prev => {
-      const existingIdx = prev.findIndex(item => item.dish.id === dish.id);
+      const suppKey = JSON.stringify(selectedSupplements || []);
+      const existingIdx = prev.findIndex(item => 
+        item.dish.id === dish.id && 
+        JSON.stringify(item.selectedSupplements || []) === suppKey
+      );
+
       if (existingIdx !== -1) {
         const updated = [...prev];
         updated[existingIdx].quantity += quantity;
         return updated;
       } else {
-        return [...prev, { dish, quantity, restaurantId: dish.restaurantId, restaurantName }];
+        return [...prev, { dish, quantity, restaurantId: dish.restaurantId, restaurantName, selectedSupplements: selectedSupplements || [] }];
       }
     });
+
+    const suppCount = selectedSupplements && selectedSupplements.length > 0 ? ` (+${selectedSupplements.length} suppléments)` : '';
+    addNotification("🛒 PLAT AJOUTÉ AU PANIER", `${quantity}x ${dish.name}${suppCount} ajouté(s) au panier avec succès !`, "success");
+
+    // Trigger smooth scale & bounce animation on Header cart icon
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('fidfud:cart-add', { detail: { dish, quantity } }));
+    }
   };
 
   // Resolve conflict by resetting cart and adding new restaurant item
@@ -513,6 +753,10 @@ export default function App() {
       setConflictItem(null);
       setSelectedDishId(null);
       setIsCartOpen(true);
+
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('fidfud:cart-add', { detail: { dish, quantity } }));
+      }
     }
   };
 
@@ -545,20 +789,22 @@ export default function App() {
 
   const handleLogout = async () => {
     try {
+      const auth = getFirebaseAuth();
+      if (auth) {
+        await signOut(auth);
+      }
       await fetch('/api/auth/logout', { method: 'POST' });
-      setUser(null);
-      setCurrentRole('client');
-      setCart([]); // Clear cart to prevent cross-account leakage
-      refreshAllData();
     } catch (err) {
       console.error('Logout error:', err);
     }
+    setUser(null);
+    setCurrentRole('client');
+    setCart([]); // Clear cart to prevent cross-account leakage
+    refreshAllData();
   };
 
   const handleOrderCompleted = (newOrder: Order) => {
     setOrders(prev => [newOrder, ...prev]);
-    setIsCheckoutOpen(false);
-    setIsOrdersHistoryOpen(true); // Open live orders history tracking to client
   };
 
   // Compute selected dish info for drawer
@@ -583,9 +829,9 @@ export default function App() {
         <div className="absolute inset-0 transition-colors duration-500" style={{ backgroundColor: color || '#050506' }} />
 
         {/* Background Image or GIF */}
-        {(type === 'image' || type === 'ad') && image && (
+        {(type === 'image' || type === 'ad') && Boolean(image?.trim()) && (
           <img
-            src={image}
+            src={image.trim()}
             alt="Background"
             loading="lazy"
             className="w-full h-full object-cover absolute inset-0 opacity-85 transition-opacity duration-500"
@@ -594,9 +840,9 @@ export default function App() {
         )}
 
         {/* Background Video */}
-        {type === 'video' && video && (
+        {type === 'video' && Boolean(video?.trim()) && (
           <BackgroundVideoPlayer
-            src={video}
+            src={video.trim()}
             isPlaying={bgVideoPlaying}
             isMuted={bgVideoMuted}
             className="w-full h-full object-cover absolute inset-0 opacity-80 transition-opacity duration-500"
@@ -652,15 +898,19 @@ export default function App() {
 
   const rgbAccent = hexToRgb(accentColor);
 
-  // Client-facing filtered sets ensuring unpublished or untracked restaurants are completely hidden
+  // Client-facing filtered sets ensuring unpublished or untracked restaurants are cleanly handled
   const clientRestaurants = restaurants.filter(r => r.isPublished !== false);
   const clientVideos = videos.filter(v => {
-    const r = clientRestaurants.find(rest => rest.id === v.restaurantId);
-    return !!r;
+    if (!v.restaurantId) return true;
+    const r = restaurants.find(rest => rest.id === v.restaurantId);
+    if (r && r.isPublished === false) return false;
+    return true;
   });
   const clientDishes = allDishes.filter(d => {
-    const r = clientRestaurants.find(rest => rest.id === d.restaurantId);
-    return !!r;
+    if (!d.restaurantId) return true;
+    const r = restaurants.find(rest => rest.id === d.restaurantId);
+    if (r && r.isPublished === false) return false;
+    return true;
   });
 
   return (
@@ -923,38 +1173,53 @@ export default function App() {
         mobileBgType={designSettings.mobileBgType || 'color'}
       />
       
-      {/* Master Top Navigation Bar */}
-      <Header
-        currentRole={currentRole}
-        onChangeRole={(role) => {
-          setCurrentRole(role);
-          if (role === 'client') {
-            setActiveLiveVideoId(null);
-          }
-        }}
-        cartCount={cart.reduce((acc, item) => acc + item.quantity, 0)}
-        onOpenCart={() => setIsCartOpen(true)}
-        activeOrderCount={orders.filter(o => o.status !== 'delivered' && o.status !== 'cancelled').length}
-        onOpenOrdersHistory={() => setIsOrdersHistoryOpen(true)}
-        user={user}
-        onOpenAuth={() => setIsAuthOpen(true)}
-        onLogout={handleLogout}
-        onOpenAdmin={() => setIsAdminCMSOpen(true)}
-        onOpenSearch={() => setIsSearchDrawerOpen(true)}
-        onOpenProfile={() => setIsProfileModalOpen(true)}
-        selectedCategory={selectedCategory}
-        onSelectCategory={(cat) => setSelectedCategory(cat)}
-        searchQuery={searchQuery}
-        onSearchQueryChange={(query) => setSearchQuery(query)}
-        designSettings={designSettings}
-        onUpdateDesignSettings={handleUpdateDesignSettings}
-        userLocation={userLocation}
-        onDetectLocation={handleDetectLocation}
-        isLocating={isLocating}
-      />
+      {/* Offline Data Sync Status Banner */}
+      <OfflineSyncBanner onOpenOfflineDownloads={() => setIsOfflineDownloadsOpen(true)} />
+
+      {/* Master Top Navigation Bar - Render when not using embedded Dark Streaming Header */}
+      {!(currentRole === 'client' && !activeLiveVideoId && (designSettings.layoutPreset === 'dark_streaming' || !designSettings.layoutPreset)) && (
+        <Header
+          currentRole={currentRole}
+          onChangeRole={(role) => {
+            setCurrentRole(role);
+            if (role === 'client') {
+              setActiveLiveVideoId(null);
+            }
+          }}
+          cartCount={cart.reduce((acc, item) => acc + item.quantity, 0)}
+          onOpenCart={() => setIsCartOpen(true)}
+          activeOrderCount={orders.filter(o => o.status !== 'delivered' && o.status !== 'cancelled').length}
+          onOpenOrdersHistory={() => setIsOrdersHistoryOpen(true)}
+          user={user}
+          onOpenAuth={() => setIsAuthOpen(true)}
+          onLogout={handleLogout}
+          onOpenAdmin={() => setIsAdminCMSOpen(true)}
+          onOpenSearch={() => setIsSearchDrawerOpen(true)}
+          onOpenProfile={() => setIsProfileModalOpen(true)}
+          selectedCategory={selectedCategory}
+          onSelectCategory={(cat) => setSelectedCategory(cat)}
+          searchQuery={searchQuery}
+          onSearchQueryChange={(query) => setSearchQuery(query)}
+          designSettings={designSettings}
+          onUpdateDesignSettings={handleUpdateDesignSettings}
+          userLocation={userLocation}
+          onDetectLocation={handleDetectLocation}
+          isLocating={isLocating}
+          onOpenContacts={() => setIsContactsModalOpen(true)}
+          onOpenDJArea={() => setIsDJAreaOpen(true)}
+          onOpenShows={() => setIsCulinaryShowsOpen(true)}
+          onOpenYouTubers={() => setIsFoodYouTubersOpen(true)}
+          onOpenRecipes={() => {
+            setRecipeInitialCategory('all');
+            setIsRecipeSectionOpen(true);
+          }}
+          onOpenDownloadApp={() => setIsDownloadAppModalOpen(true)}
+          onOpenFavorites={() => setIsFavoritesDrawerOpen(true)}
+        />
+      )}
 
       {/* Main Dynamic View Content */}
-      <main className="flex-1 w-full overflow-x-hidden">
+      <main className="flex-1 w-full overflow-x-hidden p-0">
         {currentRole === 'client' ? (
           activeLiveVideoId ? (
             <WhatnotLiveRoom
@@ -966,15 +1231,63 @@ export default function App() {
               onAddToCart={handleAddToCart}
               accentColor={accentColor}
               onOpenAuth={() => setIsAuthOpen(true)}
+              onSelectDish={handleSelectDish}
             />
           ) : (
             /* CLIENT-SIDE METAPLATE WITH MULTIPLE LAYOUT PRESETS */
             <div>
-              {isMobile || designSettings.layoutPreset === 'immersive' ? (
+              {designSettings.layoutPreset === 'dark_streaming' || !designSettings.layoutPreset ? (
+                <DarkStreamingFeed
+                  videos={clientVideos}
+                  restaurants={clientRestaurants}
+                  dishes={clientDishes}
+                  user={user}
+                  orders={orders}
+                  cartCount={cart.reduce((acc, item) => acc + item.quantity, 0)}
+                  cartTotal={cart.reduce((sum, item) => sum + (item.dish.price * item.quantity), 0)}
+                  onAddToCart={handleAddToCart}
+                  onSelectDish={handleSelectDish}
+                  onSelectLiveVideo={setActiveLiveVideoId}
+                  onOpenCart={() => setIsCartOpen(true)}
+                  onOpenOrdersHistory={() => setIsOrdersHistoryOpen(true)}
+                  onOpenAuth={() => setIsAuthOpen(true)}
+                  onLogout={handleLogout}
+                  onLoginDemo={(role) => {
+                    handleAuthSuccess({
+                      id: role === 'admin' ? 'usr-admin-demo' : role === 'restaurant' ? 'usr-rest-demo' : 'usr-client-demo',
+                      email: role === 'admin' ? 'admin@fidfud.ai' : role === 'restaurant' ? 'chef.robert@fidfud.ai' : 'alexandre.client@fidfud.ai',
+                      role: role
+                    });
+                  }}
+                  onOpenAdmin={() => setIsAdminCMSOpen(true)}
+                  onOpenProfile={() => setIsProfileModalOpen(true)}
+                  onOpenOfflineDownloads={() => setIsOfflineDownloadsOpen(true)}
+                  onOpenDJArea={() => setIsDJAreaOpen(true)}
+                  onOpenShows={() => setIsCulinaryShowsOpen(true)}
+                  onOpenYouTubers={() => setIsFoodYouTubersOpen(true)}
+                  onOpenRecipes={() => {
+                    setRecipeInitialCategory('all');
+                    setIsRecipeSectionOpen(true);
+                  }}
+                  onOpenFavorites={() => setIsFavoritesDrawerOpen(true)}
+                  accentColor={accentColor}
+                  searchQuery={searchQuery}
+                  onSearchQueryChange={setSearchQuery}
+                  selectedCategory={selectedCategory}
+                  onSelectCategory={setSelectedCategory}
+                  designSettings={designSettings}
+                  isFastLane={isFastLane}
+                  setIsFastLane={setIsFastLane}
+                  maxPrepTimeMinutes={maxPrepTimeMinutes}
+                  setMaxPrepTimeMinutes={setMaxPrepTimeMinutes}
+                  onOpenSearch={() => setIsSearchDrawerOpen(true)}
+                />
+              ) : isMobile || designSettings.layoutPreset === 'immersive' ? (
                 /* Immersive Classic TikTok full-feed */
                 <div className="py-0">
                   <VideoFeed
                     videos={clientVideos}
+                    orders={orders}
                     onSelectDish={handleSelectDish}
                     onSelectLiveVideo={setActiveLiveVideoId}
                     isLoading={isLoadingFeed}
@@ -990,6 +1303,13 @@ export default function App() {
                     setIsProximityFirst={setIsProximityFirst}
                     feedSortOrder={feedSortOrder}
                     setFeedSortOrder={setFeedSortOrder}
+                    proximityRadius={proximityRadius}
+                    isFastLane={isFastLane}
+                    maxPrepTimeMinutes={maxPrepTimeMinutes}
+                    selectedDietaryTags={selectedDietaryTags}
+                    isAutoPlayEnabled={isAutoPlayEnabled}
+                    onDeleteVideo={(id) => setVideos(prev => prev.filter(v => v.id !== id))}
+                    onRefreshData={refreshAllData}
                   />
                 </div>
               ) : designSettings.layoutPreset === 'bento' ? (
@@ -1005,8 +1325,8 @@ export default function App() {
                       style={{ backgroundColor: accentColor }}
                     />
                     <div className="flex items-center gap-3">
-                      {designSettings.logoUrl ? (
-                        <img src={designSettings.logoUrl} alt="Logo" className="responsive-logo-size object-cover rounded-xl border border-white/10 shrink-0" />
+                      {Boolean(designSettings?.logoUrl?.trim()) ? (
+                        <img src={designSettings.logoUrl.trim()} alt="Logo" className="responsive-logo-size object-cover rounded-xl border border-white/10 shrink-0" />
                       ) : (
                         <div 
                           style={{ backgroundColor: accentColor }}
@@ -1074,6 +1394,7 @@ export default function App() {
                   <div className="w-full max-w-[390px] aspect-[9/16] bg-black rounded-3xl overflow-hidden border border-white/5 shadow-2xl relative">
                     <VideoFeed
                       videos={clientVideos}
+                      orders={orders}
                       onSelectDish={handleSelectDish}
                       isLoading={isLoadingFeed}
                       user={user}
@@ -1088,6 +1409,13 @@ export default function App() {
                       setIsProximityFirst={setIsProximityFirst}
                       feedSortOrder={feedSortOrder}
                       setFeedSortOrder={setFeedSortOrder}
+                      proximityRadius={proximityRadius}
+                      isFastLane={isFastLane}
+                      maxPrepTimeMinutes={maxPrepTimeMinutes}
+                      selectedDietaryTags={selectedDietaryTags}
+                      isAutoPlayEnabled={isAutoPlayEnabled}
+                      onDeleteVideo={(id) => setVideos(prev => prev.filter(v => v.id !== id))}
+                      onRefreshData={refreshAllData}
                     />
                   </div>
                 </div>
@@ -1107,14 +1435,14 @@ export default function App() {
                           Array.from({ length: 3 }).map((_, i) => (
                             <div 
                               key={`bento-shimmer-${i}`} 
-                              className="animate-pulse p-2.5 rounded-xl bg-zinc-950/80 border border-white/2 flex items-center gap-2.5 select-none"
+                              className="p-2.5 rounded-xl bg-zinc-950/80 border border-white/5 flex items-center gap-2.5 select-none animate-shimmer-sweep"
                             >
-                              <div className="w-10 h-10 bg-zinc-800 rounded-lg shrink-0" />
+                              <div className="w-10 h-10 bg-zinc-800/80 border border-white/5 rounded-lg shrink-0 animate-shimmer-sweep" />
                               <div className="flex-1 space-y-1.5 min-w-0">
-                                <div className="h-3 bg-zinc-800 rounded w-3/4" />
-                                <div className="h-2.5 bg-zinc-800 rounded w-1/3" />
+                                <div className="h-3 bg-zinc-800/80 rounded w-3/4 animate-shimmer-sweep" />
+                                <div className="h-2.5 bg-zinc-800/60 rounded w-1/3 animate-shimmer-sweep" />
                               </div>
-                              <div className="w-3 h-3 bg-zinc-800/50 rounded shrink-0" />
+                              <div className="w-3 h-3 bg-[#FF5C00]/30 rounded shrink-0 animate-shimmer-brand" />
                             </div>
                           ))
                         ) : (
@@ -1127,7 +1455,13 @@ export default function App() {
                               onClick={() => setSelectedDishId(dish.id)}
                               className="group p-2.5 rounded-xl bg-zinc-950 hover:bg-zinc-900 border border-white/2 cursor-pointer transition-all flex items-center gap-2.5"
                             >
-                              <img src={dish.imageUrl || (dish as any).image} alt={dish.name} loading="lazy" className="w-10 h-10 object-cover rounded-lg border border-white/5" />
+                              <LazyImage 
+                                src={dish.imageUrl || (dish as any).image} 
+                                alt={dish.name} 
+                                sizeType="thumbnail"
+                                containerClassName="w-10 h-10 rounded-lg shrink-0 overflow-hidden border border-white/5"
+                                className="w-full h-full object-cover" 
+                              />
                               <div className="flex-1 min-w-0">
                                 <p className="text-xs font-extrabold text-white truncate group-hover:text-accent transition-colors uppercase italic">{dish.name}</p>
                                 <p className="text-[10px] text-zinc-500 font-mono">{dish.price.toFixed(2)} €</p>
@@ -1300,18 +1634,18 @@ export default function App() {
                         Array.from({ length: 4 }).map((_, i) => (
                           <div 
                             key={`editorial-shimmer-${i}`} 
-                            className="animate-pulse p-3.5 rounded-2xl bg-[#0F0F11] border border-white/5 flex flex-col justify-between select-none space-y-4"
+                            className="p-3.5 rounded-2xl bg-[#0F0F11] border border-white/5 flex flex-col justify-between select-none space-y-4 animate-shimmer-sweep"
                           >
-                            <div className="relative aspect-video rounded-xl bg-zinc-800 border border-white/5 overflow-hidden" />
+                            <div className="relative aspect-video rounded-xl bg-zinc-800/80 border border-white/5 overflow-hidden animate-shimmer-sweep" />
                             <div className="space-y-2">
-                              <div className="h-3.5 bg-zinc-800 rounded w-3/4" />
+                              <div className="h-3.5 bg-zinc-800/80 rounded w-3/4 animate-shimmer-sweep" />
                               <div className="space-y-1">
-                                <div className="h-2.5 bg-zinc-800 rounded w-full" />
-                                <div className="h-2.5 bg-zinc-800 rounded w-5/6" />
+                                <div className="h-2.5 bg-zinc-800/60 rounded w-full animate-shimmer-sweep" />
+                                <div className="h-2.5 bg-zinc-800/60 rounded w-5/6 animate-shimmer-sweep" />
                               </div>
                               <div className="flex justify-between items-center pt-2">
-                                <div className="h-3 bg-zinc-800 rounded w-1/4" />
-                                <div className="h-3.5 bg-zinc-800 rounded w-1/3" />
+                                <div className="h-3 bg-[#FF5C00]/30 rounded w-1/4 animate-shimmer-brand" />
+                                <div className="h-3.5 bg-zinc-800/80 rounded w-1/3 animate-shimmer-sweep" />
                               </div>
                             </div>
                           </div>
@@ -1329,7 +1663,13 @@ export default function App() {
                               className="p-3.5 rounded-2xl bg-[#0F0F11] border border-white/5 hover:border-white/10 transition-all cursor-pointer flex flex-col justify-between group"
                             >
                               <div className="relative aspect-video rounded-xl overflow-hidden border border-white/5 mb-3">
-                                <img src={dish.imageUrl || (dish as any).image} alt={dish.name} loading="lazy" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                                <LazyImage 
+                                  src={dish.imageUrl || (dish as any).image} 
+                                  alt={dish.name} 
+                                  sizeType="card"
+                                  containerClassName="w-full h-full rounded-xl overflow-hidden"
+                                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" 
+                                />
                                 <div 
                                   style={{ color: accentColor }}
                                   className="absolute top-2 left-2 bg-black/75 px-2 py-0.5 rounded text-[9px] font-bold uppercase font-mono"
@@ -1366,6 +1706,7 @@ export default function App() {
                       <div className="w-full max-w-[420px] aspect-[9/16] bg-black rounded-3xl overflow-hidden border border-white/5 shadow-2xl relative">
                         <VideoFeed
                           videos={clientVideos}
+                          orders={orders}
                           onSelectDish={handleSelectDish}
                           onSelectLiveVideo={setActiveLiveVideoId}
                           isLoading={isLoadingFeed}
@@ -1381,6 +1722,13 @@ export default function App() {
                           setIsProximityFirst={setIsProximityFirst}
                           feedSortOrder={feedSortOrder}
                           setFeedSortOrder={setFeedSortOrder}
+                          proximityRadius={proximityRadius}
+                          isFastLane={isFastLane}
+                          maxPrepTimeMinutes={maxPrepTimeMinutes}
+                          selectedDietaryTags={selectedDietaryTags}
+                          isAutoPlayEnabled={isAutoPlayEnabled}
+                          onDeleteVideo={(id) => setVideos(prev => prev.filter(v => v.id !== id))}
+                          onRefreshData={refreshAllData}
                         />
                       </div>
                     </div>
@@ -1400,6 +1748,8 @@ export default function App() {
               videos={videos}
               orders={orders}
               onRefreshData={refreshAllData}
+              initialTab={merchantTab}
+              user={user}
             />
           </div>
         ) : (
@@ -1428,6 +1778,7 @@ export default function App() {
           user={user}
           onOpenAuth={() => setIsAuthOpen(true)}
           initialTab={dishDrawerTab}
+          orders={orders}
         />
       )}
 
@@ -1453,6 +1804,8 @@ export default function App() {
         onClearCart={handleClearCart}
         onOrderCompleted={handleOrderCompleted}
         user={user}
+        onOpenProfile={() => setIsProfileModalOpen(true)}
+        onOpenOrdersHistory={() => setIsOrdersHistoryOpen(true)}
       />
 
       {/* MODAL: AUTHENTICATION FLOW */}
@@ -1473,6 +1826,10 @@ export default function App() {
         user={user}
         restaurants={restaurants}
         userLocation={userLocation}
+        dishes={allDishes}
+        onAddToCart={handleAddToCart}
+        onOpenCart={() => setIsCartOpen(true)}
+        onOrderUpdated={(updated) => setOrders(prev => prev.map(o => o.id === updated.id ? updated : o))}
       />
 
       {/* DIALOG: SINGLE RESTAURANT BASKET CONFLICT ALERTS */}
@@ -1511,13 +1868,21 @@ export default function App() {
         </div>
       )}
 
-      {/* Retractable Left-Side Glossy Admin CMS Tab */}
-      {user?.role === 'admin' && (
+      {/* Instant Toast Notification Banner */}
+      {instantSaveToast && (
+        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-[150] bg-[#FF5C00] text-white px-5 py-3 rounded-2xl shadow-2xl border border-white/20 font-black text-xs uppercase tracking-wider flex items-center gap-2 animate-bounce">
+          <Check size={18} />
+          <span>{instantSaveToast}</span>
+        </div>
+      )}
+
+      {/* Retractable Left-Side Glossy Admin CMS Tab (Only for Super Admin) */}
+      {(user?.role === 'admin' || user?.email?.toLowerCase() === 'sybis.co@gmail.com') && (
         <div className={`fixed left-0 top-[40%] -translate-y-1/2 z-[100] transition-all duration-300 flex items-stretch ${
           isAdminTabExpanded ? 'translate-x-0' : '-translate-x-[calc(100%-20px)]'
         }`}>
           {/* Glassmorphic Panel Content */}
-          <div className="bg-black/55 backdrop-blur-xl border-y border-r border-white/15 rounded-r-2xl p-3 shadow-[0_4px_30px_rgba(0,0,0,0.5)] flex flex-col items-center justify-center gap-2">
+          <div className="bg-black/85 backdrop-blur-xl border-y border-r border-white/15 rounded-r-2xl p-3 shadow-[0_4px_30px_rgba(0,0,0,0.6)] flex flex-col items-center justify-center gap-2">
             <span className="text-xl animate-bounce">👑</span>
             <div className="flex flex-col items-center">
               <span className="text-[7.5px] text-[#FF5C00] font-black tracking-widest uppercase font-mono">
@@ -1527,11 +1892,53 @@ export default function App() {
                 ADMIN
               </span>
             </div>
+
             <button
               onClick={() => setIsAdminCMSOpen(true)}
-              className="mt-1 bg-gradient-to-r from-[#FF5C00] to-orange-600 hover:from-[#FF7A00] hover:to-orange-500 text-white text-[8.5px] font-black tracking-widest px-3 py-2 rounded-xl shadow-lg transition-all active:scale-95 uppercase whitespace-nowrap cursor-pointer border border-white/10"
+              className="mt-1 bg-gradient-to-r from-[#FF5C00] to-orange-600 hover:from-[#FF7A00] hover:to-orange-500 text-white text-[8.5px] font-black tracking-widest px-3 py-2 rounded-xl shadow-lg transition-all active:scale-95 uppercase whitespace-nowrap cursor-pointer border border-white/10 w-full"
             >
               Gérer
+            </button>
+
+            {/* Quick Save Button */}
+            <button
+              disabled={isInstantSaving}
+              onClick={handleInstantAdminSave}
+              className="bg-zinc-900 hover:bg-zinc-800 text-[#FF5C00] hover:text-white border border-[#FF5C00]/30 text-[8px] font-black tracking-wider p-2 rounded-xl shadow-md transition-all active:scale-95 uppercase w-full flex items-center justify-center gap-1 cursor-pointer"
+              title="Sauvegarder immédiatement l'état complet de l'Admin"
+            >
+              {isInstantSaving ? (
+                <span className="w-3 h-3 border-2 border-[#FF5C00] border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <>
+                  <Save size={12} />
+                  <span>Sauver</span>
+                </>
+              )}
+            </button>
+
+            {/* Auto Save Toggle */}
+            <button
+              onClick={() => setIsAutoSaveEnabled(!isAutoSaveEnabled)}
+              className={`p-2 rounded-xl text-[8px] font-black tracking-wider transition-all cursor-pointer border uppercase w-full flex items-center justify-center gap-1 ${
+                isAutoSaveEnabled 
+                  ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' 
+                  : 'bg-zinc-900 text-zinc-500 border-white/5'
+              }`}
+              title="Activer/Désactiver l'enregistrement automatique"
+            >
+              <span className={`w-1.5 h-1.5 rounded-full ${isAutoSaveEnabled ? 'bg-emerald-400 animate-pulse' : 'bg-zinc-600'}`} />
+              <span>Auto: {isAutoSaveEnabled ? 'ON' : 'OFF'}</span>
+            </button>
+
+            {/* Quick History Button */}
+            <button
+              onClick={() => setIsSavesHistoryOpen(true)}
+              className="bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-white border border-white/10 text-[8px] font-black tracking-wider p-2 rounded-xl shadow-md transition-all active:scale-95 uppercase w-full flex items-center justify-center gap-1 cursor-pointer"
+              title="Historique des 25 sauvegardes"
+            >
+              <History size={12} />
+              <span>Histo (25)</span>
             </button>
           </div>
 
@@ -1550,10 +1957,21 @@ export default function App() {
         </div>
       )}
 
+      {/* MODAL: ADMIN SAVES HISTORY (25 SAVES MAX) */}
+      <SavesHistoryModal
+        isOpen={isSavesHistoryOpen}
+        onClose={() => setIsSavesHistoryOpen(false)}
+        onRefreshAppData={refreshAllData}
+        isAutoSaveEnabled={isAutoSaveEnabled}
+        onToggleAutoSave={setIsAutoSaveEnabled}
+        lastAutoSaveTime={lastAutoSaveTime}
+      />
+
       {/* MODAL: ADMIN CMS CONTROL BOARD */}
       <AdminCMS
         isOpen={isAdminCMSOpen}
         onClose={() => setIsAdminCMSOpen(false)}
+        user={user}
         restaurants={restaurants}
         dishes={allDishes}
         videos={videos}
@@ -1562,6 +1980,10 @@ export default function App() {
         designSettings={designSettings}
         onUpdateDesignSettings={handleUpdateDesignSettings}
         onSaveDesignSettings={handleSaveDesignSettings}
+        onInstantSaveAdmin={handleInstantAdminSave}
+        isAutoSaveEnabled={isAutoSaveEnabled}
+        onToggleAutoSave={() => setIsAutoSaveEnabled(!isAutoSaveEnabled)}
+        onOpenSavesHistory={() => setIsSavesHistoryOpen(true)}
       />
 
       {/* DRAWER: TOP SEARCH & CULINARY FILTERS DECK */}
@@ -1582,6 +2004,30 @@ export default function App() {
         setIsProximityFirst={setIsProximityFirst}
         feedSortOrder={feedSortOrder}
         setFeedSortOrder={setFeedSortOrder}
+        proximityRadius={proximityRadius}
+        setProximityRadius={setProximityRadius}
+        isFastLane={isFastLane}
+        setIsFastLane={setIsFastLane}
+        maxPrepTimeMinutes={maxPrepTimeMinutes}
+        setMaxPrepTimeMinutes={setMaxPrepTimeMinutes}
+        selectedDietaryTags={selectedDietaryTags}
+        setSelectedDietaryTags={setSelectedDietaryTags}
+        onSelectDish={handleSelectDish}
+        onOpenTasteProfileModal={() => setIsTasteProfileModalOpen(true)}
+      />
+
+      {/* MODAL: AI TASTE PROFILE ENGINE DECK */}
+      <TasteProfileModal
+        isOpen={isTasteProfileModalOpen}
+        onClose={() => setIsTasteProfileModalOpen(false)}
+        orders={orders}
+        user={user}
+        dishes={allDishes}
+        restaurants={restaurants}
+        onApplyFilter={() => {
+          setFeedSortOrder('taste_profile');
+          setIsSearchDrawerOpen(false);
+        }}
       />
 
       {/* MODAL: PROFILE, SETTINGS & ROLE CONTROL DECK */}
@@ -1589,6 +2035,7 @@ export default function App() {
         isOpen={isProfileModalOpen}
         onClose={() => setIsProfileModalOpen(false)}
         user={user}
+        orders={orders}
         onOpenAuth={() => setIsAuthOpen(true)}
         onLogout={handleLogout}
         currentRole={currentRole}
@@ -1596,6 +2043,9 @@ export default function App() {
         onOpenAdmin={() => setIsAdminCMSOpen(true)}
         activeOrderCount={orders.filter(o => o.status !== 'delivered' && o.status !== 'cancelled').length}
         onOpenOrdersHistory={() => setIsOrdersHistoryOpen(true)}
+        isAutoPlayEnabled={isAutoPlayEnabled}
+        onToggleAutoPlay={handleToggleAutoPlay}
+        onOpenContacts={() => setIsContactsModalOpen(true)}
       />
 
       {/* MODAL: INTERACTIVE SERVICES ACTIVATOR */}
@@ -1638,114 +2088,128 @@ export default function App() {
         ))}
       </div>
 
-      {/* Sleek Whatnot-style Bottom Navigation Bar */}
-      {user !== null && currentRole === 'client' && (
-        <div className="fixed bottom-0 left-0 right-0 z-45 bg-[#050506]/95 backdrop-blur-xl border-t border-white/5 py-1 px-4 flex items-center justify-between pointer-events-auto shadow-[0_-5px_25px_rgba(0,0,0,0.8)] pb-safe">
-          <div className="max-w-md mx-auto w-full flex items-center justify-between">
-            {/* Accueil Tab */}
-            <button 
-              onClick={() => {
-                setActiveLiveVideoId(null);
-                setSelectedDishId(null);
-                setIsCartOpen(false);
-                setIsCheckoutOpen(false);
-                setIsOrdersHistoryOpen(false);
-                setIsSearchDrawerOpen(false);
-                setIsProfileModalOpen(false);
-                setSelectedCategory('');
-                setTimeout(() => {
-                  const firstVideo = document.getElementById('video-container-0') || document.querySelector('.snap-start');
-                  if (firstVideo) {
-                    firstVideo.scrollIntoView({ behavior: 'smooth' });
-                  }
-                }, 50);
-              }}
-              className={`flex flex-col items-center justify-center space-y-0.5 cursor-pointer py-1 px-3 transition-all duration-300 ${
-                !selectedCategory && !activeLiveVideoId && !selectedDishId && !isOrdersHistoryOpen && !isProfileModalOpen ? 'text-[#FF5C00] scale-105 font-bold' : 'text-zinc-400 hover:text-white'
-              }`}
-            >
-              <HomeIcon size={16} className={!selectedCategory && !activeLiveVideoId && !selectedDishId && !isOrdersHistoryOpen && !isProfileModalOpen ? 'text-[#FF5C00]' : 'text-zinc-400'} />
-              <span className="text-[8.5px] font-black uppercase tracking-wider">Accueil</span>
-            </button>
+      {/* Super-Admin Visual Editor Floating Toolbar */}
+      {designSettings.isVisualEditorActive && (user?.role === 'admin' || user?.email?.toLowerCase() === 'sybis.co@gmail.com') && (
+        <div className="fixed top-14 left-1/2 -translate-x-1/2 z-[90] bg-amber-500/95 text-black px-4 py-2 rounded-2xl border-2 border-black/20 shadow-2xl backdrop-blur-xl flex items-center gap-3 text-xs font-black animate-bounce">
+          <span className="flex items-center gap-1.5 uppercase tracking-wider">
+            🛠️ Mode Éditeur Elementor Actif
+          </span>
 
-            {/* Catégories Tab */}
-            <button 
-              onClick={() => {
-                setActiveLiveVideoId(null);
-                setSelectedDishId(null);
-                setIsCartOpen(false);
-                setIsCheckoutOpen(false);
-                setIsOrdersHistoryOpen(false);
-                setIsProfileModalOpen(false);
-                setIsSearchDrawerOpen(true);
-              }}
-              className="flex flex-col items-center justify-center space-y-0.5 cursor-pointer text-zinc-400 hover:text-white transition-all duration-300 py-1 px-3"
-            >
-              <LayoutGrid size={16} />
-              <span className="text-[8.5px] font-black uppercase tracking-wider">Catégories</span>
-            </button>
+          <button
+            onClick={() => setIsAdminCMSOpen(true)}
+            className="px-2.5 py-1 bg-black text-amber-400 hover:bg-zinc-900 rounded-xl font-bold cursor-pointer transition-all"
+          >
+            Builder CMS
+          </button>
 
-            {/* Vendre (Plus icon in circular background) Tab */}
-            <button 
-              onClick={() => {
-                setActiveLiveVideoId(null);
-                setSelectedDishId(null);
-                setCurrentRole('restaurant');
-                addNotification("👨‍🍳 MODE CHEF ACTIVÉ", "Bienvenue dans votre espace de gestion restaurateur !");
-              }}
-              className="flex flex-col items-center justify-center space-y-0.5 cursor-pointer text-[#FF5C00] hover:text-[#FF7A00] transition-all duration-300 py-1 px-3 -translate-y-1"
+          {(designSettings.hiddenElements || []).length > 0 && (
+            <button
+              onClick={() => handleUpdateDesignSettings({ hiddenElements: [] })}
+              className="px-2.5 py-1 bg-black/20 text-black hover:bg-black/30 rounded-xl font-bold cursor-pointer transition-all"
             >
-              <div className="bg-[#FF5C00] hover:bg-orange-500 text-white rounded-full p-1.5 shadow-[0_0_12px_rgba(255,92,0,0.4)] transition-all">
-                <Plus size={16} className="stroke-[3]" />
-              </div>
-              <span className="text-[8.5px] font-black uppercase tracking-wider text-[#FF5C00]">Vendre</span>
+              Rétablir Tout ({designSettings.hiddenElements.length})
             </button>
+          )}
 
-            {/* Activité Tab */}
-            <button 
-              onClick={() => {
-                setActiveLiveVideoId(null);
-                setSelectedDishId(null);
-                setIsCartOpen(false);
-                setIsCheckoutOpen(false);
-                setIsSearchDrawerOpen(false);
-                setIsProfileModalOpen(false);
-                setIsOrdersHistoryOpen(true);
-              }}
-              className={`flex flex-col items-center justify-center space-y-0.5 cursor-pointer transition-all duration-300 py-1 px-3 ${
-                isOrdersHistoryOpen ? 'text-[#FF5C00]' : 'text-zinc-400 hover:text-white'
-              }`}
-            >
-              <div className="relative">
-                <Bell size={16} />
-                {orders.filter(o => o.status !== 'delivered' && o.status !== 'cancelled').length > 0 && (
-                  <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-[#FF5C00] animate-pulse"></span>
-                )}
-              </div>
-              <span className="text-[8.5px] font-black uppercase tracking-wider">Activité</span>
-            </button>
-
-            {/* Compte Tab */}
-            <button 
-              onClick={() => {
-                setActiveLiveVideoId(null);
-                setSelectedDishId(null);
-                setIsCartOpen(false);
-                setIsCheckoutOpen(false);
-                setIsSearchDrawerOpen(false);
-                setIsOrdersHistoryOpen(false);
-                setIsProfileModalOpen(true);
-              }}
-              className={`flex flex-col items-center justify-center space-y-0.5 cursor-pointer transition-all duration-300 py-1 px-3 ${
-                isProfileModalOpen ? 'text-[#FF5C00]' : 'text-zinc-400 hover:text-white'
-              }`}
-            >
-              <User size={16} />
-              <span className="text-[8.5px] font-black uppercase tracking-wider">Compte</span>
-            </button>
-          </div>
+          <button
+            onClick={() => handleUpdateDesignSettings({ isVisualEditorActive: false })}
+            className="p-1 bg-black/20 hover:bg-black/40 text-black rounded-lg cursor-pointer"
+            title="Désactiver l'Éditeur"
+          >
+            <X size={14} />
+          </button>
         </div>
       )}
+
+      {/* Offline Downloads Drawer */}
+      <OfflineDownloadsDrawer
+        isOpen={isOfflineDownloadsOpen}
+        onClose={() => setIsOfflineDownloadsOpen(false)}
+      />
+
+      {/* Google Contacts Modal */}
+      <GoogleContactsModal
+        isOpen={isContactsModalOpen}
+        onClose={() => setIsContactsModalOpen(false)}
+        onSendGiftDish={(contact) => {
+          addNotification("🎁 CADEAU ENVOYÉ", `Un repas cadeau a été envoyé à ${contact.name} (${contact.email || contact.phone})`);
+          setIsContactsModalOpen(false);
+        }}
+        onInviteToLive={(contact) => {
+          addNotification("🎥 INVITATION SENT", `Invitation au Live transmise à ${contact.name}`);
+          setIsContactsModalOpen(false);
+        }}
+        designSettings={designSettings}
+      />
+
+      {/* DJ Area & Live Lounge Modal */}
+      <DJAreaModal
+        isOpen={isDJAreaOpen}
+        onClose={() => setIsDJAreaOpen(false)}
+        restaurants={clientRestaurants}
+        dishes={clientDishes}
+        onAddToCart={handleAddToCart}
+        onSelectDish={(dishId) => {
+          setSelectedDishId(dishId);
+          setIsDJAreaOpen(false);
+        }}
+        accentColor={accentColor}
+      />
+
+      {/* Promotional & Discovery Popups Modal */}
+      <PromotionalPopupModal
+        onOpenDJArea={() => setIsDJAreaOpen(true)}
+        onSelectCategory={(cat) => setSelectedCategory(cat)}
+        onOpenCulinaryChannels={() => setIsCulinaryShowsOpen(true)}
+        onOpenFoodYouTubers={() => setIsFoodYouTubersOpen(true)}
+        accentColor={accentColor}
+      />
+
+      {/* Culinary Shows Modal */}
+      <CulinaryShowsModal
+        isOpen={isCulinaryShowsOpen}
+        onClose={() => setIsCulinaryShowsOpen(false)}
+        restaurants={clientRestaurants}
+        dishes={clientDishes}
+      />
+
+      {/* Food YouTubers Modal */}
+      <FoodYouTubersModal
+        isOpen={isFoodYouTubersOpen}
+        onClose={() => setIsFoodYouTubersOpen(false)}
+      />
+
+      {/* Recipe Section Modal */}
+      <RecipeSectionModal
+        isOpen={isRecipeSectionOpen}
+        onClose={() => setIsRecipeSectionOpen(false)}
+        initialCategory={recipeInitialCategory}
+        currentUser={user ? { id: user.id, email: user.email, name: user.email, role: user.role } : null}
+        onRefreshFeed={refreshAllData}
+      />
+
+      {/* PWA Download App Modal */}
+      <DownloadAppModal
+        isOpen={isDownloadAppModalOpen}
+        onClose={() => setIsDownloadAppModalOpen(false)}
+      />
+
+      {/* Favorites / Saved Restaurants Drawer */}
+      <FavoritesDrawer
+        isOpen={isFavoritesDrawerOpen}
+        onClose={() => setIsFavoritesDrawerOpen(false)}
+        user={user}
+        restaurants={clientRestaurants}
+        dishes={clientDishes}
+        onOpenDish={(dishId, tab) => {
+          setSelectedDishId(dishId);
+          if (tab) setDishDrawerTab(tab);
+        }}
+        onOpenAuth={() => {
+          setAuthModalInitialMode('login');
+          setIsAuthOpen(true);
+        }}
+      />
 
     </div>
   );

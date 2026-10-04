@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Play, 
   ShoppingBag, 
   Plus, 
+  Check,
   Eye, 
   Heart, 
   Sparkles, 
@@ -15,9 +16,17 @@ import {
   MessageSquare,
   Gift,
   Flame,
-  Award
+  Award,
+  Volume2,
+  VolumeX,
+  ShieldCheck
 } from 'lucide-react';
 import { Video, Restaurant, Dish, User } from '../types';
+import { CATEGORY_LIST } from '../constants/categories';
+import BackgroundVideoPlayer from './BackgroundVideoPlayer';
+import { STABLE_CULINARY_FALLBACK_VIDEOS } from '../utils/videoUtils';
+
+const STABLE_CULINARY_VIDEOS = STABLE_CULINARY_FALLBACK_VIDEOS;
 
 interface WhatnotLiveMarketProps {
   videos: Video[];
@@ -82,6 +91,8 @@ export const WhatnotLiveMarket: React.FC<WhatnotLiveMarketProps> = ({
     return () => clearInterval(interval);
   }, [videos]);
 
+  const [addedItemIds, setAddedItemIds] = useState<Record<string, boolean>>({});
+
   const toggleLike = (videoId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     setLikedVideos(prev => ({
@@ -93,26 +104,68 @@ export const WhatnotLiveMarket: React.FC<WhatnotLiveMarketProps> = ({
   const handleQuickAdd = (dish: Dish, e: React.MouseEvent) => {
     e.stopPropagation();
     onAddToCart(dish, 1);
+    setAddedItemIds(prev => ({ ...prev, [dish.id]: true }));
+    setTimeout(() => {
+      setAddedItemIds(prev => ({ ...prev, [dish.id]: false }));
+    }, 1000);
   };
 
   // List of interactive categories (similar to Whatnot's sidebar)
   const sidebarCategories = [
     { id: '', label: 'Pour toi', icon: '🔥' },
-    { id: 'Italien', label: 'Italien', icon: '🍝' },
-    { id: 'Burgers', label: 'Burgers', icon: '🍔' },
-    { id: 'Japonais', label: 'Japonais', icon: '🍣' },
-    { id: 'Français', label: 'Français', icon: '🥞' },
-    { id: 'Rapide', label: 'Rapide', icon: '⚡' },
-    { id: 'Végétarien', label: 'Végétarien', icon: '🥗' },
-    { id: 'Desserts', label: 'Desserts', icon: '🍰' },
-    { id: 'Tacos', label: 'Tacos & Grill', icon: '🌮' },
-    { id: 'Boissons', label: 'Boissons', icon: '🥤' }
+    ...CATEGORY_LIST.map(c => ({ id: c.id, label: c.id, icon: c.icon }))
   ];
 
+  const [unmutedCardIds, setUnmutedCardIds] = useState<string[]>([]);
+
+  // Build complete video list sorted by createdAt descending (newest videos first, like Instagram/TikTok)
+  const rawVideos = videos && videos.length > 0 ? videos : [];
+  
+  const effectiveVideos = useMemo(() => {
+    // Only use actual videos provided in props. If rawVideos is empty, build initial feed from restaurants with videoUrl.
+    const list: Video[] = [...rawVideos];
+
+    if (list.length === 0 && restaurants && restaurants.length > 0) {
+      restaurants.forEach((rest, rIdx) => {
+        if (rest.videoUrl) {
+          list.push({
+            id: `market_vid_rest_${rest.id}`,
+            restaurantId: rest.id,
+            restaurantName: rest.name,
+            title: `🔴 EN DIRECT: Démonstration et Préparation chez ${rest.name}`,
+            description: rest.description || `Retrouvez les créations gourmandes de ${rest.name} en direct.`,
+            videoUrl: rest.videoUrl,
+            likesCount: 88 + rIdx * 15,
+            viewsCount: 1200 + rIdx * 230,
+            isLiveContinuous: true,
+            isOnline: true,
+            createdAt: rest.createdAt || new Date(Date.now() - (rIdx + 1) * 15 * 60 * 1000).toISOString()
+          });
+        }
+      });
+    }
+
+    // Ensure EVERY video has a valid videoUrl
+    list.forEach((v, idx) => {
+      if (!v.videoUrl || v.videoUrl.trim() === '') {
+        v.videoUrl = STABLE_CULINARY_VIDEOS[idx % STABLE_CULINARY_VIDEOS.length];
+      }
+    });
+
+    // Sort strictly by createdAt descending (newest videos first)
+    list.sort((a, b) => {
+      const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return timeB - timeA;
+    });
+
+    return list;
+  }, [rawVideos, restaurants]);
+
   // Helper to match videos with their category
-  const filteredVideos = videos.filter(video => {
+  const filteredVideos = effectiveVideos.filter(video => {
     const restaurant = restaurants.find(r => r.id === video.restaurantId);
-    const dish = dishes.find(d => d.id === video.associatedDishId);
+    const dish = dishes.find(d => d.id === video.associatedDishId || d.restaurantId === video.restaurantId);
     
     // 1. Search Query filtering
     if (searchQuery.trim()) {
@@ -133,12 +186,11 @@ export const WhatnotLiveMarket: React.FC<WhatnotLiveMarketProps> = ({
 
     // 3. Horizontal mini filters
     if (marketFilter === 'live') {
-      // In Whatnot, everything is live or auction-ready
       return true;
     } else if (marketFilter === 'promo') {
       return !!restaurant?.promoMessage || !!video.promoOverlay;
     } else if (marketFilter === 'popular') {
-      return video.likesCount > 10;
+      return (video.likesCount || 0) > 10;
     }
 
     return true;
@@ -268,12 +320,14 @@ export const WhatnotLiveMarket: React.FC<WhatnotLiveMarketProps> = ({
         {/* Live Grid */}
         {filteredVideos.length > 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 xl:grid-cols-3 gap-6">
-            {filteredVideos.map(video => {
+            {filteredVideos.map((video, vIdx) => {
               const restaurant = restaurants.find(r => r.id === video.restaurantId);
-              const dish = dishes.find(d => d.id === video.associatedDishId);
+              const dish = dishes.find(d => d.id === video.associatedDishId || d.restaurantId === video.restaurantId);
               const watchers = watcherCounts[video.id] || 15;
               const isLiked = !!likedVideos[video.id];
               const isHovered = hoveredCardId === video.id;
+              const isUnmuted = unmutedCardIds.includes(video.id);
+              const cardVideoUrl = video.videoUrl || restaurant?.videoUrl || STABLE_CULINARY_VIDEOS[vIdx % STABLE_CULINARY_VIDEOS.length];
 
               return (
                 <div
@@ -281,11 +335,11 @@ export const WhatnotLiveMarket: React.FC<WhatnotLiveMarketProps> = ({
                   onClick={() => onSelectLiveVideo ? onSelectLiveVideo(video.id) : (dish && onSelectDish(dish.id))}
                   onMouseEnter={() => setHoveredCardId(video.id)}
                   onMouseLeave={() => setHoveredCardId(null)}
-                  className="bg-zinc-950/60 backdrop-blur-md border border-white/5 rounded-3xl overflow-hidden hover:border-white/15 transition-all group/card flex flex-col justify-between cursor-pointer hover:shadow-2xl hover:shadow-[#FF5C00]/5 hover:-translate-y-0.5 duration-300 relative"
+                  className="bg-zinc-950/60 backdrop-blur-md border border-white/5 rounded-3xl overflow-hidden hover:border-amber-500/50 transition-all group/card flex flex-col justify-between cursor-pointer hover:shadow-2xl hover:shadow-[#FF5C00]/10 hover:-translate-y-0.5 duration-300 relative"
                 >
                   
                   {/* Top Bar inside the Card: Host details */}
-                  <div className="p-3.5 flex items-center justify-between border-b border-white/2 bg-zinc-950/20">
+                  <div className="p-3.5 flex items-center justify-between border-b border-white/5 bg-zinc-950/40 z-10">
                     <div className="flex items-center gap-2 min-w-0">
                       <div className="w-7 h-7 rounded-full bg-zinc-900 border border-white/15 overflow-hidden flex items-center justify-center shrink-0">
                         {restaurant?.logoUrl ? (
@@ -295,15 +349,18 @@ export const WhatnotLiveMarket: React.FC<WhatnotLiveMarketProps> = ({
                         )}
                       </div>
                       <div className="min-w-0">
-                        <h4 className="text-[11px] font-black text-white truncate uppercase tracking-wider">{restaurant?.name || 'Chef Gourmet'}</h4>
-                        <p className="text-[9px] text-zinc-500 truncate font-sans">{restaurant?.category || 'Culinary Art'}</p>
+                        <div className="flex items-center gap-1">
+                          <h4 className="text-[11px] font-black text-white truncate uppercase tracking-wider">{restaurant?.name || 'Chef Gourmet'}</h4>
+                          <ShieldCheck size={12} className="text-amber-400 shrink-0" />
+                        </div>
+                        <p className="text-[9px] text-zinc-400 truncate font-sans">{restaurant?.category || 'Culinary Art'}</p>
                       </div>
                     </div>
 
                     {/* Like button on top bar */}
                     <button
                       onClick={(e) => toggleLike(video.id, e)}
-                      className={`p-1.5 rounded-lg border transition-all ${
+                      className={`p-1.5 rounded-lg border transition-all cursor-pointer ${
                         isLiked 
                           ? 'bg-red-500/10 border-red-500/20 text-red-500' 
                           : 'bg-white/5 border-white/5 text-zinc-400 hover:text-white'
@@ -313,26 +370,39 @@ export const WhatnotLiveMarket: React.FC<WhatnotLiveMarketProps> = ({
                     </button>
                   </div>
 
-                  {/* Thumbnail Cover with Badges */}
-                  <div className="aspect-[4/3] w-full bg-zinc-900 relative overflow-hidden group-hover/card:brightness-105 transition-all">
-                    {/* Background dish picture */}
-                    {dish?.imageUrl ? (
-                      <img 
-                        src={dish.imageUrl} 
-                        alt={video.title} 
-                        loading="lazy"
-                        className="w-full h-full object-cover transition-transform duration-500 group-hover/card:scale-102"
-                        referrerPolicy="no-referrer"
-                      />
-                    ) : (
-                      <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-zinc-900 to-black text-zinc-600">
-                        <UtensilsCrossed size={32} />
-                        <span className="text-[10px] mt-2 font-mono">LIVE PREVIEW</span>
-                      </div>
-                    )}
+                  {/* Looping Video Background Canvas */}
+                  <div className="aspect-[4/3] w-full bg-black relative overflow-hidden group-hover/card:brightness-105 transition-all">
+                    <BackgroundVideoPlayer
+                      src={cardVideoUrl}
+                      isPlaying={true}
+                      isMuted={!isUnmuted}
+                      className="w-full h-full object-cover transition-transform duration-500 group-hover/card:scale-105"
+                    />
+
+                    {/* Top & Bottom Gradients for Contrast */}
+                    <div className="absolute inset-x-0 top-0 h-16 bg-gradient-to-b from-black/80 via-black/30 to-transparent pointer-events-none" />
+                    <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-black/80 via-black/30 to-transparent pointer-events-none" />
+
+                    {/* Audio Toggle Button */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setUnmutedCardIds(prev => 
+                          prev.includes(video.id) ? prev.filter(id => id !== video.id) : [...prev, video.id]
+                        );
+                      }}
+                      className={`absolute top-3.5 right-3.5 z-20 p-1.5 rounded-xl border backdrop-blur-md transition-all cursor-pointer ${
+                        isUnmuted 
+                          ? 'bg-amber-500 text-zinc-950 border-amber-400 shadow-lg scale-105' 
+                          : 'bg-black/60 text-zinc-300 hover:text-white border-white/10 hover:bg-black/80'
+                      }`}
+                      title={isUnmuted ? "Couper le son" : "Activer le son en direct"}
+                    >
+                      {isUnmuted ? <Volume2 size={13} /> : <VolumeX size={13} />}
+                    </button>
 
                     {/* RED LIVE BADGE (Animated pulsing) */}
-                    <div className="absolute top-3.5 left-3.5 bg-red-600 text-white font-mono font-black text-[9.5px] uppercase tracking-wider px-2 py-1 rounded-lg flex items-center gap-1.5 shadow-lg shadow-red-900/30">
+                    <div className="absolute top-3.5 left-3.5 bg-red-600 text-white font-mono font-black text-[9.5px] uppercase tracking-wider px-2 py-1 rounded-lg flex items-center gap-1.5 shadow-lg shadow-red-900/30 z-10">
                       <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
                       <span className="w-1.5 h-1.5 rounded-full bg-white absolute" />
                       <span>Live • {watchers}</span>
@@ -340,14 +410,14 @@ export const WhatnotLiveMarket: React.FC<WhatnotLiveMarketProps> = ({
 
                     {/* Promo pill inside cover if exists */}
                     {(restaurant?.promoMessage || video.promoOverlay) && (
-                      <div className="absolute bottom-3.5 left-3.5 bg-amber-500 text-zinc-950 font-mono font-black text-[8.5px] uppercase tracking-widest px-2 py-0.5 rounded-md shadow-lg border border-amber-400">
+                      <div className="absolute bottom-3.5 left-3.5 z-10 bg-amber-500 text-zinc-950 font-mono font-black text-[8.5px] uppercase tracking-widest px-2 py-0.5 rounded-md shadow-lg border border-amber-400">
                         {restaurant?.promoMessage || video.promoOverlay}
                       </div>
                     )}
 
                     {/* Interactive overlay on hover */}
                     {isHovered && (
-                      <div className="absolute inset-0 bg-black/40 backdrop-blur-[1px] flex items-center justify-center transition-all duration-300">
+                      <div className="absolute inset-0 bg-black/30 backdrop-blur-[1px] flex items-center justify-center transition-all duration-300 pointer-events-none">
                         <div className="w-11 h-11 rounded-full bg-[#FF5C00] text-white flex items-center justify-center shadow-lg transform scale-110 duration-200">
                           <Play size={16} className="fill-current ml-0.5 text-white" />
                         </div>
@@ -382,11 +452,17 @@ export const WhatnotLiveMarket: React.FC<WhatnotLiveMarketProps> = ({
                         {/* Buy Instant Button */}
                         <button
                           onClick={(e) => handleQuickAdd(dish, e)}
-                          style={{ backgroundColor: accentColor }}
-                          className="p-2 rounded-xl text-zinc-950 font-black uppercase tracking-wider text-[10px] hover:scale-105 active:scale-95 transition-all cursor-pointer flex items-center justify-center shrink-0 shadow-md shadow-black/40"
+                          style={{ backgroundColor: addedItemIds[dish.id] ? '#10B981' : accentColor }}
+                          className={`p-2 rounded-xl text-zinc-950 font-black uppercase tracking-wider text-[10px] hover:scale-105 active:scale-90 transition-all cursor-pointer flex items-center justify-center shrink-0 shadow-md shadow-black/40 ${
+                            addedItemIds[dish.id] ? 'animate-button-pop text-white bg-emerald-500' : ''
+                          }`}
                           title="Ajouter directement au panier"
                         >
-                          <Plus size={14} className="text-zinc-950 font-black" />
+                          {addedItemIds[dish.id] ? (
+                            <Check size={14} className="text-white font-black animate-count-pop" />
+                          ) : (
+                            <Plus size={14} className="text-zinc-950 font-black" />
+                          )}
                         </button>
                       </div>
                     )}

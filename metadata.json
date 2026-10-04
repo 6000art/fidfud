@@ -1,6 +1,6 @@
 {
   "name": "Fitfood",
-  "description": "Fusion between vertical immersive video feeds and instant food ordering. Scroll videos, click to view dishes, order with ease.",
+  "description": "Fusion between vertical immersive video feeds and instant food ordering with real-time loyalty points tracking, rewards redemption, and Stripe Connect payouts.",
   "requestFramePermissions": ["geolocation"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

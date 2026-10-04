@@ -171,7 +171,8 @@ export class VideoValidator {
 
       video.onerror = () => {
         cleanup();
-        resolve({ isValid: false });
+        // Allow user/restaurateur provided video URLs even if DOM metadata check triggers CORS warning
+        resolve({ isValid: true });
       };
     });
   }

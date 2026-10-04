@@ -1,6 +1,8 @@
 import React from 'react';
-import { X, ShoppingBag, Trash2, Plus, Minus, CreditCard, ShieldAlert } from 'lucide-react';
+import LazyImage from './LazyImage';
+import { X, ShoppingBag, Trash2, Plus, Minus, CreditCard, ShieldAlert, Sparkles } from 'lucide-react';
 import { CartItem } from '../types';
+import { notify } from '../utils/notify';
 
 interface CartProps {
   isOpen: boolean;
@@ -23,11 +25,34 @@ export default function Cart({
 }: CartProps) {
   if (!isOpen) return null;
 
-  const subtotal = cartItems.reduce((acc, item) => acc + item.dish.price * item.quantity, 0);
+  const subtotal = cartItems.reduce((acc, item) => {
+    const suppTotal = (item.selectedSupplements || []).reduce((sum, s) => sum + s.price, 0);
+    return acc + (item.dish.price + suppTotal) * item.quantity;
+  }, 0);
+
   const restaurantName = cartItems.length > 0 ? cartItems[0].restaurantName : '';
 
+  const handleUpdateQty = (dishId: string, delta: number, dishName: string) => {
+    onUpdateQuantity(dishId, delta);
+    if (delta > 0) {
+      notify("🔢 QUANTITÉ AUGMENTÉE", `Une portion de ${dishName} ajoutée`, "info");
+    } else {
+      notify("🔢 QUANTITÉ DIMINUÉE", `Portion de ${dishName} ajustée`, "info");
+    }
+  };
+
+  const handleRemove = (dishId: string, dishName: string) => {
+    onRemoveItem(dishId);
+    notify("🗑️ PLAT RETIRÉ", `${dishName} retiré du panier`, "info");
+  };
+
+  const handleClear = () => {
+    onClearCart();
+    notify("🗑️ PANIER VIDÉ", "Tous les articles ont été retirés du panier", "warn");
+  };
+
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-black/80 backdrop-blur-sm transition-opacity duration-300">
+    <div className="fixed inset-0 z-[100] flex justify-end bg-black/80 backdrop-blur-sm transition-opacity duration-300">
       {/* Click outside to close */}
       <div className="absolute inset-0" onClick={onClose} />
 
@@ -46,7 +71,7 @@ export default function Cart({
           <button 
             id="btn-close-cart"
             onClick={onClose}
-            className="p-1.5 rounded-full bg-zinc-900 text-zinc-400 hover:text-white border border-white/5 transition-colors"
+            className="p-1.5 rounded-full bg-zinc-900 text-zinc-400 hover:text-white border border-white/5 transition-colors cursor-pointer"
           >
             <X size={18} />
           </button>
@@ -82,70 +107,91 @@ export default function Cart({
 
               {/* Items List */}
               <div className="space-y-3">
-                {cartItems.map(item => (
-                  <div 
-                    key={item.dish.id} 
-                    className="p-3.5 rounded-xl bg-white/5 border border-white/5 flex items-start space-x-3 transition-colors hover:border-white/10"
-                  >
-                    {/* Dish Image */}
-                    {item.dish.imageUrl && (
-                      <img 
-                        src={item.dish.imageUrl} 
-                        alt={item.dish.name} 
-                        referrerPolicy="no-referrer"
-                        loading="lazy"
-                        className="w-16 h-16 rounded-lg object-cover bg-zinc-900 flex-shrink-0 border border-white/5"
-                      />
-                    )}
+                {cartItems.map(item => {
+                  const suppTotal = (item.selectedSupplements || []).reduce((sum, s) => sum + s.price, 0);
+                  const itemUnitPrice = item.dish.price + suppTotal;
+                  const itemTotalPrice = itemUnitPrice * item.quantity;
 
-                    {/* Information */}
-                    <div className="flex-1 min-w-0">
-                      <p className="text-white text-sm font-black truncate">{item.dish.name}</p>
-                      <p className="text-zinc-500 text-[11px] truncate mt-0.5">{item.dish.description}</p>
-                      <p className="text-[#FF5A1F] text-sm font-extrabold mt-1.5">
-                        {(item.dish.price * item.quantity).toFixed(2)} €
-                      </p>
-                    </div>
+                  return (
+                    <div 
+                      key={item.dish.id + (item.selectedSupplements?.map(s => s.id).join('-') || '')} 
+                      className="p-3.5 rounded-xl bg-white/5 border border-white/5 flex items-start space-x-3 transition-colors hover:border-white/10"
+                    >
+                      {/* Dish Image */}
+                      {item.dish.imageUrl && (
+                        <LazyImage 
+                          src={item.dish.imageUrl} 
+                          alt={item.dish.name} 
+                          sizeType="thumbnail"
+                          containerClassName="w-16 h-16 rounded-lg shrink-0 overflow-hidden bg-zinc-900 border border-white/5"
+                          className="w-full h-full object-cover" 
+                        />
+                      )}
 
-                    {/* Actions and Quantities */}
-                    <div className="flex flex-col items-end justify-between h-16 pl-2">
-                      <button 
-                        onClick={() => onRemoveItem(item.dish.id)}
-                        className="p-1 text-zinc-500 hover:text-red-500 transition-colors"
-                        title="Supprimer du panier"
-                      >
-                        <Trash2 size={14} />
-                      </button>
+                      {/* Information */}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-white text-sm font-black truncate">{item.dish.name}</p>
+                        <p className="text-zinc-500 text-[11px] truncate mt-0.5">{item.dish.description}</p>
+                        
+                        {/* Selected Supplements Pill List */}
+                        {item.selectedSupplements && item.selectedSupplements.length > 0 && (
+                          <div className="mt-1.5 flex flex-wrap gap-1">
+                            {item.selectedSupplements.map(supp => (
+                              <span 
+                                key={supp.id}
+                                className="inline-flex items-center gap-1 text-[9px] bg-amber-500/10 text-amber-300 px-1.5 py-0.5 rounded border border-amber-500/20 font-mono"
+                              >
+                                <Sparkles size={8} /> {supp.name} (+{supp.price.toFixed(2)}€)
+                              </span>
+                            ))}
+                          </div>
+                        )}
 
-                      <div className="flex items-center space-x-1 bg-zinc-950 border border-white/5 rounded-lg p-0.5">
-                        <button
-                          onClick={() => onUpdateQuantity(item.dish.id, -1)}
-                          className="p-1 text-zinc-400 hover:text-white transition-colors"
-                          title="Diminuer"
+                        <p className="text-[#FF5A1F] text-sm font-extrabold mt-1.5">
+                          {itemTotalPrice.toFixed(2)} €
+                        </p>
+                      </div>
+
+                      {/* Actions and Quantities */}
+                      <div className="flex flex-col items-end justify-between h-16 pl-2">
+                        <button 
+                          onClick={() => handleRemove(item.dish.id, item.dish.name)}
+                          className="p-1 text-zinc-500 hover:text-red-500 transition-colors cursor-pointer"
+                          title="Supprimer du panier"
                         >
-                          <Minus size={11} />
+                          <Trash2 size={14} />
                         </button>
-                        <span className="w-5 text-center text-xs font-bold text-white font-mono">
-                          {item.quantity}
-                        </span>
-                        <button
-                          onClick={() => onUpdateQuantity(item.dish.id, 1)}
-                          className="p-1 text-zinc-400 hover:text-white transition-colors"
-                          title="Augmenter"
-                        >
-                          <Plus size={11} />
-                        </button>
+
+                        <div className="flex items-center space-x-1 bg-zinc-950 border border-white/5 rounded-lg p-0.5">
+                          <button
+                            onClick={() => handleUpdateQty(item.dish.id, -1, item.dish.name)}
+                            className="p-1 text-zinc-400 hover:text-white transition-colors cursor-pointer"
+                            title="Diminuer"
+                          >
+                            <Minus size={11} />
+                          </button>
+                          <span className="w-5 text-center text-xs font-bold text-white font-mono">
+                            {item.quantity}
+                          </span>
+                          <button
+                            onClick={() => handleUpdateQty(item.dish.id, 1, item.dish.name)}
+                            className="p-1 text-zinc-400 hover:text-white transition-colors cursor-pointer"
+                            title="Augmenter"
+                          >
+                            <Plus size={11} />
+                          </button>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
 
               {/* Clear Cart Button */}
               <button
                 id="btn-clear-cart"
-                onClick={onClearCart}
-                className="w-full text-center text-xs text-zinc-500 hover:text-red-500 hover:border-red-500/20 transition-colors py-2 border border-white/5 rounded-lg font-mono"
+                onClick={handleClear}
+                className="w-full text-center text-xs text-zinc-500 hover:text-red-500 hover:border-red-500/20 transition-colors py-2 border border-white/5 rounded-lg font-mono cursor-pointer"
               >
                 Vider le panier entièrement
               </button>

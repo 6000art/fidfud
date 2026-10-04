@@ -24,6 +24,33 @@
       "id": "usr-92njv6b",
       "email": "sybis.co@gmail.com",
       "role": "admin"
+    },
+    {
+      "id": "usr-5atq4c5",
+      "email": "culturfu@gmail.com",
+      "role": "client",
+      "fullName": "Culturfu"
+    },
+    {
+      "id": "usr-i57y7v5",
+      "email": "test.client@fidfud.app",
+      "role": "client",
+      "fullName": "Alice Gourmet",
+      "phone": "",
+      "address": "",
+      "siret": "",
+      "createdAt": "2026-07-25T12:19:33.370Z",
+      "password": "adminresetpass789"
+    },
+    {
+      "id": "usr-hdlakiy",
+      "email": "chef.mario@fidfud.app",
+      "role": "restaurant",
+      "fullName": "Mario Rossi",
+      "phone": "",
+      "address": "",
+      "siret": "",
+      "createdAt": "2026-07-25T12:20:01.477Z"
     }
   ],
   "comments": [
@@ -112,7 +139,7 @@
   "userPoints": [
     {
       "userId": "usr-client-1",
-      "points": 500
+      "points": 568
     },
     {
       "userId": "usr-rest-nonna",
@@ -125,6 +152,10 @@
     {
       "userId": "usr-rest-burger",
       "points": 200
+    },
+    {
+      "userId": "R7xlK87WOnW0yVwpHATkXZfFXPy1",
+      "points": 500
     }
   ],
   "userRewardClaims": [
@@ -136,77 +167,811 @@
       "code": "FID10-XYZ7",
       "isUsed": false,
       "createdAt": "2026-07-15T09:41:00.876Z"
+    },
+    {
+      "id": "clm-0obn0m2",
+      "userId": "usr-client-1",
+      "rewardId": "free-drink",
+      "rewardName": "Boisson Fraîche Offerte",
+      "code": "SODA-6FHP",
+      "isUsed": false,
+      "createdAt": "2026-09-08T11:06:17.853Z"
     }
   ],
   "tips": [],
   "restaurants": [
     {
-      "promoMessage": "Offre Radar Google Maps : 1 boisson offerte ! 🥤",
-      "countdownText": "Plat signature en cours de cuisson minute",
-      "longitude": 2.39294,
-      "slogan": "Le roi du smash burger gourmand et croustillant ! 🍔🔥",
-      "commissionRateCollect": 5,
-      "countdownMinutes": 9,
-      "isCertified": true,
-      "commissionRateDelivery": 10,
-      "createdAt": "2026-07-15T09:47:33.522Z",
-      "description": "Un incontournable de la street food locale proposant des smash burgers savoureux avec des buns briochés dorés à souhait et des frites maison croustillantes.",
-      "name": "L'Atelier du Burger",
-      "dispositionShop": "Ivry-Port",
-      "logoUrl": "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=150&auto=format&fit=crop&q=80",
-      "isOrderingEnabled": true,
-      "id": "rest-lpls4e5",
-      "isPublished": true,
-      "bannerUrl": "https://images.unsplash.com/photo-1550547660-d9450f859349?w=1200&auto=format&fit=crop&q=80",
-      "email": "contact@latelierduburger.com",
-      "subscriptionTier": "pro",
-      "isFavorite": true,
-      "likesReceived": 88,
-      "address": "2 Place Léon Gambetta, 94200 Ivry-sur-Seine",
-      "phone": "+33 1 42 33 32 25",
+      "id": "rest-mcn627z",
       "userId": "usr-admin-1",
+      "name": "Le Camion Qui Fume",
+      "shortName": "Le Camion Qui Fume",
+      "address": "24 rue Saussier-Leroy 75017 Paris Vous pouvez pas nous r",
+      "commissionRateDelivery": 15,
+      "commissionRateCollect": 5,
+      "stripeAccountId": "acct_AO2RD9I",
+      "logoUrl": "https://i0.wp.com/lecamionquifume.com/wp-content/uploads/cropped-LOGOS-COULEURS-CMJN.png?fit=180%2C180&#038;ssl=1",
+      "bannerUrl": "https://lecamionquifume.com/wp-content/uploads/LOGOS-COULEURS-CMJN.png",
+      "slogan": "L'art culinaire authentique et du fait maison ✨",
+      "isCertified": true,
+      "subscriptionTier": "pro",
+      "promoMessage": "OFFRE DÉCOUVERTE : -10% sur votre première commande ! ✨",
+      "countdownMinutes": 7,
+      "countdownText": "Plat phare en cours de dressage minute",
+      "likesReceived": 463,
+      "pointsReceived": 156,
+      "createdAt": "2026-09-24T12:36:20.509Z",
+      "email": "contact@lecamionquifume.com",
+      "phone": "01 84 16 33 75",
+      "description": "Le Camion Qui Fume | Burger gourmet - Food Truck - Restaurant LA CARTE RESTAURANTS LIVRAISON CLICK &#038; COLLECT FOODTRUCK RECRUTEMENT Nouveau restaurant !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! 24 rue Saussier-Leroy 75017 Paris Vous pouvez pas nous râter, on est entre Nini et Schwartz J&#039;arrive ! Les Authentiques Sauces Hot Ones US sont au Camion qui ",
       "category": "Burgers",
-      "stripeAccountId": "acct_3924BCT",
-      "videoUrl": "https://assets.mixkit.co/videos/preview/mixkit-putting-ketchup-on-a-freshly-prepared-hamburger-40246-large.mp4",
-      "videoTitle": "🔥 Sensation culinaire chez L'Atelier du Burger : découvrez notre délicieuse création Le Double Bacon Smash Deluxe ! 🤤✨",
-      "latitude": 48.81358,
-      "pointsReceived": 113,
-      "shortName": "L'Atelier du Burger"
+      "categories": [
+        "Burgers",
+        "Street Food",
+        "Frites Maison"
+      ],
+      "isFavorite": true,
+      "dispositionShop": "24 rue Saussier-Leroy 75017 Paris Vous pouvez pas nous r",
+      "latitude": 48.887,
+      "longitude": 2.317,
+      "website": "https://lecamionquifume.com/",
+      "websiteUrl": "https://lecamionquifume.com/",
+      "isOrderingEnabled": true,
+      "isPublished": true,
+      "rating": 4.9,
+      "reviewCount": 51,
+      "ratingDistribution": {
+        "1": 0,
+        "2": 0,
+        "3": 0,
+        "4": 0,
+        "5": 0
+      }
+    },
+    {
+      "id": "rest-38phh70",
+      "userId": "usr-admin-1",
+      "name": "Kodawari Ramen",
+      "shortName": "Kodawari Ramen",
+      "address": "15 Rue de la Gastronomie, 75001 Paris",
+      "commissionRateDelivery": 15,
+      "commissionRateCollect": 5,
+      "stripeAccountId": "acct_DXIGPXU",
+      "logoUrl": "https://www.kodawari-ramen.com/wp-content/uploads/2018/06/cropped-favicon-180x180.png",
+      "bannerUrl": "https://www.kodawari-ramen.com/wp-content/uploads/2019/06/kodawari-ramen-yokocho-logo.jpg",
+      "slogan": "L'art culinaire authentique et du fait maison ✨",
+      "isCertified": true,
+      "subscriptionTier": "pro",
+      "promoMessage": "OFFRE DÉCOUVERTE : -10% sur votre première commande ! ✨",
+      "countdownMinutes": 10,
+      "countdownText": "Plat phare en cours de dressage minute",
+      "likesReceived": 411,
+      "pointsReceived": 411,
+      "createdAt": "2026-09-24T12:36:09.840Z",
+      "email": "contact@kodawari-ramen.com",
+      "phone": "+33 1 42 68 53 00",
+      "description": "Kodawari Ramen - Kodawari Ramen Aller au contenu Kodawari Ramen fb inst tw ta Menu Accueil File d’attente Kodawari Yokocho – La Carte Kodawari Tsukiji – La Carte Kodawari Ueno &#8211; La Carte Kodawari Nous Rejoindre Contact Kodawari Ramen 26 juin 2018 dev-kodarina Kodawari Ramen Ramen de qualité Yokocho • signifie « allée » en japonais. Par extens",
+      "category": "Japonais",
+      "categories": [
+        "Restaurant",
+        "Italien",
+        "Pizze",
+        "Pâtes",
+        "Cuisine du Monde",
+        "Fait Maison",
+        "Japonais",
+        "Sushis",
+        "Ramen"
+      ],
+      "isFavorite": true,
+      "dispositionShop": "Secteur Central",
+      "latitude": 48.8625,
+      "longitude": 2.3364,
+      "website": "https://kodawari-ramen.com/",
+      "websiteUrl": "https://kodawari-ramen.com/",
+      "isOrderingEnabled": true,
+      "isPublished": true,
+      "rating": 4.9,
+      "reviewCount": 69,
+      "ratingDistribution": {
+        "1": 0,
+        "2": 0,
+        "3": 0,
+        "4": 0,
+        "5": 0
+      }
+    },
+    {
+      "id": "rest-8f95skn",
+      "userId": "usr-admin-1",
+      "name": "L'Atelier Bella ivry sur seine",
+      "shortName": "L'Atelier Bella ivry sur seine",
+      "address": "32 Rue de la République, ivry sur seine",
+      "commissionRateDelivery": 10,
+      "commissionRateCollect": 5,
+      "stripeAccountId": "acct_9GIF04W",
+      "logoUrl": "https://images.unsplash.com/photo-1513104890138-7c749659a591?w=150&auto=format&fit=crop&q=80",
+      "bannerUrl": "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=1200&auto=format&fit=crop&q=80",
+      "slogan": "La nouvelle sensation culinaire incontournable à ivry sur seine ! 🍳✨",
+      "isCertified": true,
+      "subscriptionTier": "pro",
+      "promoMessage": "Offre Radar Google Maps : 1 boisson offerte ! 🥤",
+      "countdownMinutes": 5,
+      "countdownText": "Plat signature en cours de cuisson minute",
+      "likesReceived": 176,
+      "pointsReceived": 140,
+      "createdAt": "2026-09-24T14:11:45.459Z",
+      "email": "contact@latelierbellaivrysurseine.com",
+      "phone": "+33 1 42 33 67 62",
+      "description": "Un nouvel établissement tendance à ivry sur seine mettant à l'honneur des produits de saison cuisinés maison. Une atmosphère conviviale et un design soigné de haute facture.",
+      "category": "Italien",
+      "dispositionShop": "Secteur 1",
+      "isFavorite": true,
+      "latitude": 48.81705351230997,
+      "longitude": 2.3114482453573233,
+      "isOrderingEnabled": true,
+      "rating": 4.9,
+      "reviewCount": 0,
+      "ratingDistribution": {
+        "1": 0,
+        "2": 0,
+        "3": 0,
+        "4": 0,
+        "5": 0
+      }
+    },
+    {
+      "id": "rest-fxkzj4c",
+      "userId": "usr-admin-1",
+      "name": "La Trattoria Lab ivry sur seine",
+      "shortName": "La Trattoria Lab ivry sur seine",
+      "address": "47 Avenue de la Gare, ivry sur seine",
+      "commissionRateDelivery": 10,
+      "commissionRateCollect": 5,
+      "stripeAccountId": "acct_LSW9M2V",
+      "logoUrl": "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=150&auto=format&fit=crop&q=80",
+      "bannerUrl": "https://images.unsplash.com/photo-1550547660-d9450f859349?w=1200&auto=format&fit=crop&q=80",
+      "slogan": "La nouvelle sensation culinaire incontournable à ivry sur seine ! 🍳✨",
+      "isCertified": true,
+      "subscriptionTier": "pro",
+      "promoMessage": "Offre Radar Google Maps : 1 boisson offerte ! 🥤",
+      "countdownMinutes": 6,
+      "countdownText": "Plat signature en cours de cuisson minute",
+      "likesReceived": 112,
+      "pointsReceived": 65,
+      "createdAt": "2026-09-24T14:11:51.763Z",
+      "email": "contact@latrattorialabivrysurseine.com",
+      "phone": "+33 1 42 33 68 95",
+      "description": "Un nouvel établissement tendance à ivry sur seine mettant à l'honneur des produits de saison cuisinés maison. Une atmosphère conviviale et un design soigné de haute facture.",
+      "category": "Burgers",
+      "dispositionShop": "Secteur 3",
+      "isFavorite": true,
+      "latitude": 48.802617627245816,
+      "longitude": 2.304267141863,
+      "isOrderingEnabled": true,
+      "rating": 4.9,
+      "reviewCount": 0,
+      "ratingDistribution": {
+        "1": 0,
+        "2": 0,
+        "3": 0,
+        "4": 0,
+        "5": 0
+      }
     }
   ],
   "dishes": [
     {
-      "description": "Deux steaks de bœuf Angus smashés, cheddar maturé, tranches de bacon fumé et notre légendaire sauce maison.",
-      "isPopular": true,
-      "restaurantId": "rest-lpls4e5",
+      "id": "dish-1xrjovb",
+      "restaurantId": "rest-38phh70",
+      "name": "Mochis Glacés Artisanaux Duo",
+      "description": "Duo de mochis glacés japonais : Thé matcha bio de Kyoto et mangue passion des îles.",
+      "price": 6.5,
       "isAvailable": true,
-      "price": 13.9,
+      "imageUrl": "https://images.unsplash.com/photo-1563805042-7684c019e1cb?w=600&auto=format&fit=crop&q=80",
+      "createdAt": "2026-09-24T14:18:33.187Z",
+      "category": "Desserts",
+      "rating": 4.8,
+      "reviewCount": 0,
+      "ratingDistribution": {
+        "1": 0,
+        "2": 0,
+        "3": 0,
+        "4": 0,
+        "5": 0
+      }
+    },
+    {
+      "id": "dish-x6ilr5q",
+      "restaurantId": "rest-38phh70",
+      "name": "Gyozas Grillés au Poulet Fermier (6 pièces)",
+      "description": "Raviolis japonais maison croustillants sur la plaque, farce poulet fermier, chou chinois, gingembre et ciboule fraîche.",
+      "price": 8.5,
+      "isAvailable": true,
+      "imageUrl": "https://images.unsplash.com/photo-1496116218417-1a781b1c416c?w=600&auto=format&fit=crop&q=80",
+      "createdAt": "2026-09-24T14:18:32.077Z",
+      "category": "Entrées & Street Food",
+      "rating": 4.8,
+      "reviewCount": 0,
+      "ratingDistribution": {
+        "1": 0,
+        "2": 0,
+        "3": 0,
+        "4": 0,
+        "5": 0
+      }
+    },
+    {
+      "id": "dish-go2l1z2",
+      "restaurantId": "rest-38phh70",
+      "name": "Ramen Tonkotsu Fumant Traditionnel",
+      "description": "Bouillon onctueux mijoté 14h, nouilles fraîches artisanales, chashu de porc fondant, œuf ajitsuke mariné et bambou menma.",
+      "price": 16.5,
+      "isAvailable": true,
+      "imageUrl": "https://www.kodawari-ramen.com/wp-content/uploads/2019/06/kodawari-ramen-yokocho-logo.jpg",
+      "createdAt": "2026-09-24T14:18:30.939Z",
+      "category": "Ramen & Plats Chauds",
+      "rating": 4.8,
+      "reviewCount": 0,
+      "ratingDistribution": {
+        "1": 0,
+        "2": 0,
+        "3": 0,
+        "4": 0,
+        "5": 0
+      }
+    },
+    {
+      "id": "dish-wjy98df",
+      "restaurantId": "rest-38phh70",
+      "name": "Plateau Omakase Royal (18 pièces)",
+      "description": "Sélection premium du Maître Sushi : Nigiris saumon d'Écosse, thon rouge label, rolls anguille grillée et tartare épicé.",
+      "price": 24.5,
+      "isAvailable": true,
+      "imageUrl": "https://www.kodawari-ramen.com/wp-content/uploads/2019/06/logo-kodawari-ramen-150.png",
+      "createdAt": "2026-09-24T14:18:29.813Z",
+      "category": "Sushis & Rolls",
+      "rating": 4.8,
+      "reviewCount": 0,
+      "ratingDistribution": {
+        "1": 0,
+        "2": 0,
+        "3": 0,
+        "4": 0,
+        "5": 0
+      }
+    },
+    {
+      "id": "dish-y8w2j8l",
+      "restaurantId": "rest-38phh70",
+      "name": "Plat Signature du Chef - La Felicita",
+      "description": "Création bistronomique préparée avec des produits de saison sélectionnés auprès de producteurs passionnés.",
+      "price": 18.5,
+      "isAvailable": true,
+      "imageUrl": "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=600&auto=format&fit=crop&q=80",
+      "createdAt": "2026-09-24T14:18:20.485Z",
+      "category": "Plats Signatures",
+      "rating": 4.8,
+      "reviewCount": 0,
+      "ratingDistribution": {
+        "1": 0,
+        "2": 0,
+        "3": 0,
+        "4": 0,
+        "5": 0
+      }
+    },
+    {
+      "id": "dish-861yfro",
+      "restaurantId": "rest-38phh70",
+      "name": "Plat Signature du Chef - africain à Ris",
+      "description": "Le Kôrô dans l&#039;Essonne - Explorez la cuisine africaine de L&#039;Ouest avec nos spécialités délicieuses et épicées : maffé d&#039;agneau, Yassa au poulet, ",
+      "price": 18.5,
+      "isAvailable": true,
+      "imageUrl": "https://local-fr-public.s3.eu-west-3.amazonaws.com/prod/webtool/userfiles/106091/mobile.webp",
+      "createdAt": "2026-09-24T13:02:00.025Z",
+      "category": "Plats Signatures",
+      "rating": 4.8,
+      "reviewCount": 0,
+      "ratingDistribution": {
+        "1": 0,
+        "2": 0,
+        "3": 0,
+        "4": 0,
+        "5": 0
+      }
+    },
+    {
+      "id": "dish-dzo6hxt",
+      "restaurantId": "rest-38phh70",
+      "name": "Plat Signature du Chef - Popolare",
+      "description": "Création bistronomique préparée avec des produits de saison sélectionnés auprès de producteurs passionnés.",
+      "price": 18.5,
+      "isAvailable": true,
+      "imageUrl": "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=600&auto=format&fit=crop&q=80",
+      "createdAt": "2026-09-24T12:39:04.603Z",
+      "category": "Plats Signatures",
+      "rating": 4.8,
+      "reviewCount": 0,
+      "ratingDistribution": {
+        "1": 0,
+        "2": 0,
+        "3": 0,
+        "4": 0,
+        "5": 0
+      }
+    },
+    {
+      "id": "dish-t7t7e38",
+      "restaurantId": "rest-38phh70",
+      "name": "Douceur Sucrée Maison",
+      "description": "Dessert artisanal d'exception préparé chaque matin par notre chef pâtissier.",
+      "price": 7.5,
+      "isAvailable": true,
+      "imageUrl": "https://images.unsplash.com/photo-1551024709-8f23befc6f87?w=600&auto=format&fit=crop&q=80",
+      "createdAt": "2026-09-24T12:36:31.122Z",
+      "category": "Desserts",
+      "rating": 4.8,
+      "reviewCount": 0,
+      "ratingDistribution": {
+        "1": 0,
+        "2": 0,
+        "3": 0,
+        "4": 0,
+        "5": 0
+      }
+    },
+    {
+      "id": "dish-vhl3db8",
+      "restaurantId": "rest-38phh70",
+      "name": "Entrée Gourmande de Saison",
+      "description": "Assiette fraîche et raffinée dressée minute avec herbes fraîches et émulsion du moment.",
+      "price": 11.5,
+      "isAvailable": true,
+      "imageUrl": "https://images.unsplash.com/photo-1540420773420-3366772f4999?w=600&auto=format&fit=crop&q=80",
+      "createdAt": "2026-09-24T12:36:30.033Z",
+      "category": "Entrées",
+      "rating": 4.8,
+      "reviewCount": 0,
+      "ratingDistribution": {
+        "1": 0,
+        "2": 0,
+        "3": 0,
+        "4": 0,
+        "5": 0
+      }
+    },
+    {
+      "id": "dish-pgh3lfz",
+      "restaurantId": "rest-38phh70",
+      "name": "Plat Signature du Chef - Restaurant Gourmand",
+      "description": "Création bistronomique préparée avec des produits de saison sélectionnés auprès de producteurs passionnés.",
+      "price": 18.5,
+      "isAvailable": true,
+      "imageUrl": "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=600&auto=format&fit=crop&q=80",
+      "createdAt": "2026-09-24T12:36:28.949Z",
+      "category": "Plats Signatures",
+      "rating": 4.8,
+      "reviewCount": 0,
+      "ratingDistribution": {
+        "1": 0,
+        "2": 0,
+        "3": 0,
+        "4": 0,
+        "5": 0
+      }
+    },
+    {
+      "id": "dish-xy7h2px",
+      "restaurantId": "rest-mcn627z",
+      "name": "Cookie Mi-Cuit Chocolat Fleur de Sel",
+      "description": "Gros cookie américain tiède au cœur coulant chocolat noir Valrhona et noisettes torréfiées.",
+      "price": 5.5,
+      "isAvailable": true,
+      "imageUrl": "https://images.unsplash.com/photo-1499636136210-6f4ee915583e?w=600&auto=format&fit=crop&q=80",
+      "createdAt": "2026-09-24T12:36:24.937Z",
+      "category": "Desserts",
+      "rating": 4.8,
+      "reviewCount": 0,
+      "ratingDistribution": {
+        "1": 0,
+        "2": 0,
+        "3": 0,
+        "4": 0,
+        "5": 0
+      }
+    },
+    {
+      "id": "dish-rhu6zaq",
+      "restaurantId": "rest-mcn627z",
+      "name": "Frites Fraîches Maison au Romarin",
+      "description": "Pommes de terre Agria taillées chaque matin, double cuisson au gras végétal croustillante et sel marin au romarin.",
+      "price": 4.5,
+      "isAvailable": true,
+      "imageUrl": "https://images.unsplash.com/photo-1573080496219-bb080dd4f877?w=600&auto=format&fit=crop&q=80",
+      "createdAt": "2026-09-24T12:36:23.824Z",
+      "category": "Accompagnements",
+      "rating": 4.8,
+      "reviewCount": 0,
+      "ratingDistribution": {
+        "1": 0,
+        "2": 0,
+        "3": 0,
+        "4": 0,
+        "5": 0
+      }
+    },
+    {
+      "id": "dish-i8y8cox",
+      "restaurantId": "rest-mcn627z",
+      "name": "Smoky BBQ Bacon Burger",
+      "description": "Bœuf Black Angus, bacon fumé croustillant au bois de hêtre, compotée d'oignons doux et sauce barbecue fumée artisanale.",
+      "price": 16.5,
+      "isAvailable": true,
+      "imageUrl": "https://images.unsplash.com/photo-1586190848861-99aa4a171e90?w=600&auto=format&fit=crop&q=80",
+      "createdAt": "2026-09-24T12:36:22.700Z",
+      "category": "Burgers Signatures",
+      "rating": 4.8,
+      "reviewCount": 0,
+      "ratingDistribution": {
+        "1": 0,
+        "2": 0,
+        "3": 0,
+        "4": 0,
+        "5": 0
+      }
+    },
+    {
+      "id": "dish-rodziro",
+      "restaurantId": "rest-mcn627z",
+      "name": "Double Smash Burger Cheddar Vintage",
+      "description": "Deux steaks de bœuf français smashés minute et croustillants, cheddar maturé 18 mois, oignons caramélisés et sauce secrète maison.",
+      "price": 15.5,
+      "isAvailable": true,
+      "imageUrl": "https://lecamionquifume.com/wp-content/uploads/LOGOS-COULEURS-CMJN.png",
+      "createdAt": "2026-09-24T12:36:21.454Z",
+      "category": "Burgers Signatures",
+      "rating": 4.8,
+      "reviewCount": 0,
+      "ratingDistribution": {
+        "1": 0,
+        "2": 0,
+        "3": 0,
+        "4": 0,
+        "5": 0
+      }
+    },
+    {
+      "id": "dish-6cum06l",
+      "restaurantId": "rest-38phh70",
+      "name": "Tiramisù Tradizionale Maison",
+      "description": "Biscuits savoiardi imbibés de café ristretto d'exception, mascarpone aérien et cacao amer d'Équateur poudré minute.",
+      "price": 8,
+      "isAvailable": true,
+      "imageUrl": "https://images.unsplash.com/photo-1571877227200-a0d98ea607e9?w=600&auto=format&fit=crop&q=80",
+      "createdAt": "2026-09-24T12:36:14.295Z",
+      "category": "Dolci",
+      "rating": 4.8,
+      "reviewCount": 0,
+      "ratingDistribution": {
+        "1": 0,
+        "2": 0,
+        "3": 0,
+        "4": 0,
+        "5": 0
+      }
+    },
+    {
+      "id": "dish-niregy8",
+      "restaurantId": "rest-38phh70",
+      "name": "Burrata Crémeuse & Tomates Datterini",
+      "description": "Burrata fraîche 250g, concassé de tomates datterini mûries au soleil, pesto de pistache de Sicile et focaccia tiède.",
+      "price": 13.5,
+      "isAvailable": true,
+      "imageUrl": "https://images.unsplash.com/photo-1592417817098-8f3d6910985b?w=600&auto=format&fit=crop&q=80",
+      "createdAt": "2026-09-24T12:36:13.157Z",
+      "category": "Antipasti",
+      "rating": 4.8,
+      "reviewCount": 0,
+      "ratingDistribution": {
+        "1": 0,
+        "2": 0,
+        "3": 0,
+        "4": 0,
+        "5": 0
+      }
+    },
+    {
+      "id": "dish-z987zgi",
+      "restaurantId": "rest-38phh70",
+      "name": "Pizza Tartufo & Stracciatella",
+      "description": "Crème de truffe noire d'Ombrie, stracciatella des Pouilles fondante, champignons sautés et parmesan affiné 24 mois.",
+      "price": 19,
+      "isAvailable": true,
+      "imageUrl": "https://images.unsplash.com/photo-1513104890138-7c749659a591?w=600&auto=format&fit=crop&q=80",
+      "createdAt": "2026-09-24T12:36:12.014Z",
+      "category": "Pizze Artigianali",
+      "rating": 4.8,
+      "reviewCount": 0,
+      "ratingDistribution": {
+        "1": 0,
+        "2": 0,
+        "3": 0,
+        "4": 0,
+        "5": 0
+      }
+    },
+    {
+      "id": "dish-yax3px1",
+      "restaurantId": "rest-38phh70",
+      "name": "Pizza Margherita di Bufala D.O.P.",
+      "description": "Sauce tomate San Marzano, mozzarella di bufala campana crémeuse, basilic frais et filet d'huile d'olive extra vierge.",
+      "price": 14.5,
+      "isAvailable": true,
+      "imageUrl": "https://images.unsplash.com/photo-1604382354936-07c5d9983bd3?w=600&auto=format&fit=crop&q=80",
+      "createdAt": "2026-09-24T12:36:10.859Z",
+      "category": "Pizze Artigianali",
+      "rating": 4.8,
+      "reviewCount": 0,
+      "ratingDistribution": {
+        "1": 0,
+        "2": 0,
+        "3": 0,
+        "4": 0,
+        "5": 0
+      }
+    },
+    {
+      "id": "dish-42uhhhm",
+      "restaurantId": "rest-8f95skn",
+      "name": "La Pizza Spéciale du Chef",
+      "price": 15.9,
+      "description": "Tomates locales, burrata crémeuse, jambon de Parme affiné 18 mois et filet d'huile d'olive infusée.",
+      "imageUrl": "https://images.unsplash.com/photo-1513104890138-7c749659a591?w=150&auto=format&fit=crop&q=80",
+      "isAvailable": true,
+      "isPopular": true,
+      "rating": 4.8,
+      "reviewCount": 0,
+      "ratingDistribution": {
+        "1": 0,
+        "2": 0,
+        "3": 0,
+        "4": 0,
+        "5": 0
+      }
+    },
+    {
+      "id": "dish-55z9qqc",
+      "restaurantId": "rest-fxkzj4c",
       "name": "Le Double Bacon Smash Deluxe",
+      "price": 13.9,
+      "description": "Deux steaks de bœuf Angus smashés, cheddar maturé, tranches de bacon fumé et notre légendaire sauce maison.",
       "imageUrl": "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=150&auto=format&fit=crop&q=80",
-      "id": "dish-se9gssn"
+      "isAvailable": true,
+      "isPopular": true,
+      "rating": 4.8,
+      "reviewCount": 0,
+      "ratingDistribution": {
+        "1": 0,
+        "2": 0,
+        "3": 0,
+        "4": 0,
+        "5": 0
+      }
     }
   ],
   "videos": [
     {
-      "title": "🔥 Sensation culinaire chez L'Atelier du Burger : découvrez notre délicieuse création Le Double Bacon Smash Deluxe ! 🤤✨",
-      "viewsCount": 4589,
-      "associatedDishId": "dish-se9gssn",
-      "createdAt": "2026-07-15T09:47:34.072Z",
-      "videoUrl": "https://assets.mixkit.co/videos/preview/mixkit-putting-ketchup-on-a-freshly-prepared-hamburger-40246-large.mp4",
-      "averageWatchTime": 16.1,
-      "id": "vid-a0ndaqv",
-      "likesCount": 90,
-      "validationCheckedAt": "2026-07-17T11:07:56.898Z",
+      "id": "vid-7z8lnd0",
+      "restaurantId": "rest-fxkzj4c",
+      "videoUrl": "/uploads/culinary-1.mp4",
+      "associatedDishId": "dish-55z9qqc",
+      "title": "🔥 Sensation culinaire chez La Trattoria Lab ivry sur seine : découvrez notre délicieuse création Le Double Bacon Smash Deluxe ! 🤤✨",
+      "likesCount": 49,
+      "createdAt": "2026-09-24T14:11:54.005Z",
       "validationStatus": "valid",
-      "restaurantId": "rest-lpls4e5"
+      "validationCheckedAt": "2026-10-04T10:51:39.346Z",
+      "isOnline": true,
+      "viewsCount": 1,
+      "averageWatchTime": 4
+    },
+    {
+      "id": "vid-lpo176t",
+      "restaurantId": "rest-8f95skn",
+      "videoUrl": "/uploads/culinary-4.mp4",
+      "associatedDishId": "dish-42uhhhm",
+      "title": "🔥 Sensation culinaire chez L'Atelier Bella ivry sur seine : découvrez notre délicieuse création La Pizza Spéciale du Chef ! 🤤✨",
+      "likesCount": 52,
+      "createdAt": "2026-09-24T14:11:47.626Z",
+      "validationStatus": "valid",
+      "validationCheckedAt": "2026-10-04T10:51:39.346Z",
+      "isOnline": true
+    },
+    {
+      "id": "vid-9l64u69",
+      "restaurantId": "rest-mcn627z",
+      "videoUrl": "/uploads/culinary-2.mp4",
+      "associatedDishId": "dish-rodziro",
+      "title": "🔥 NOUVEAU SUR FIDFUD : Découvrez Le Camion Qui Fume ! L'art culinaire authentique et du fait maison ✨",
+      "likesCount": 289,
+      "createdAt": "2026-09-24T12:36:26.051Z",
+      "validationStatus": "valid",
+      "validationCheckedAt": "2026-10-04T10:51:39.346Z",
+      "isOnline": true,
+      "viewsCount": 3632,
+      "averageWatchTime": 22.1
+    },
+    {
+      "id": "vid-ifoh4kp",
+      "restaurantId": "rest-38phh70",
+      "videoUrl": "/uploads/culinary-1.mp4",
+      "associatedDishId": "dish-yax3px1",
+      "title": "🔥 NOUVEAU SUR FIDFUD : Découvrez Restaurant Gourmand ! L'art culinaire authentique et du fait maison ✨",
+      "likesCount": 296,
+      "createdAt": "2026-09-24T12:36:15.369Z",
+      "validationStatus": "valid",
+      "validationCheckedAt": "2026-10-04T10:51:39.346Z",
+      "isOnline": true,
+      "viewsCount": 108,
+      "averageWatchTime": 6.9
+    },
+    {
+      "id": "vid-recipe-rec-avocado-minute",
+      "restaurantId": "rec-author-fidfud",
+      "restaurantName": "👨‍🍳 Camille Gourmande (Recette)",
+      "videoUrl": "/uploads/culinary-fallback.mp4",
+      "thumbnailUrl": "https://images.unsplash.com/photo-1525351484163-7529414344d8?w=800",
+      "title": "👨‍🍳 Avocado Toast & Œuf Coulant Minute",
+      "description": "Le toast parfait du matin : pain au levain croustillant, écrasé d'avocat au citron vert et œuf mollet au piment d'Espelette.",
+      "likesCount": 312,
+      "createdAt": "2026-08-22T12:13:05.115Z",
+      "isOnline": true,
+      "isRecipe": true,
+      "recipeId": "rec-avocado-minute",
+      "category": "Snacks & Express",
+      "categories": [
+        "Recettes",
+        "Snacks & Express",
+        "Express"
+      ],
+      "videoSourceType": "direct",
+      "recipe": {
+        "id": "rec-avocado-minute",
+        "title": "Avocado Toast & Œuf Coulant Minute",
+        "description": "Le toast parfait du matin : pain au levain croustillant, écrasé d'avocat au citron vert et œuf mollet au piment d'Espelette.",
+        "category": "Snacks & Express",
+        "authorId": "usr-client-1",
+        "authorName": "Camille Gourmande",
+        "authorRole": "client",
+        "authorAvatar": "https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=200",
+        "prepTimeMinutes": 4,
+        "cookTimeMinutes": 2,
+        "difficulty": "Facile",
+        "budgetLevel": "€€",
+        "servings": 1,
+        "calories": 340,
+        "videoUrl": "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerMeltdowns.mp4",
+        "thumbnailUrl": "https://images.unsplash.com/photo-1525351484163-7529414344d8?w=800",
+        "videoSourceType": "direct",
+        "ingredients": [
+          {
+            "name": "Tranche de pain au levain",
+            "quantity": "1 grande",
+            "emoji": "🍞"
+          },
+          {
+            "name": "Avocat mûr",
+            "quantity": "1/2",
+            "emoji": "🥑"
+          },
+          {
+            "name": "Œuf frais",
+            "quantity": "1",
+            "emoji": "🥚"
+          },
+          {
+            "name": "Jus de citron vert & Espelette",
+            "quantity": "1 filet",
+            "emoji": "🍋"
+          }
+        ],
+        "steps": [
+          {
+            "stepNumber": 1,
+            "instruction": "Griller la tranche de pain au grille-pain."
+          },
+          {
+            "stepNumber": 2,
+            "instruction": "Écraser l'avocat à la fourchette avec jus de citron, sel et piment d'Espelette."
+          },
+          {
+            "stepNumber": 3,
+            "instruction": "Cuire l'œuf au plat ou mollet 3 minutes."
+          },
+          {
+            "stepNumber": 4,
+            "instruction": "Tartiner le pain et déposer l'œuf chaud coulant sur le dessus."
+          }
+        ],
+        "tips": [
+          "Ajoutez des graines de sésame noir ou des flocons de sel pour le croquant."
+        ],
+        "dietaryTags": [
+          "Healthy",
+          "Végétarien",
+          "Brunch"
+        ],
+        "likesCount": 312,
+        "createdAt": "2026-08-22T12:13:05.115Z",
+        "isApproved": true
+      },
+      "validationStatus": "valid",
+      "validationCheckedAt": "2026-10-04T10:51:39.346Z"
     }
   ],
-  "orders": [],
-  "currentUserSession": {
-    "id": "usr-92njv6b",
-    "email": "sybis.co@gmail.com",
-    "role": "admin"
-  },
+  "orders": [
+    {
+      "id": "ord-n4s9ivx",
+      "userId": "usr-i57y7v5",
+      "restaurantId": "rest-lpls4e5",
+      "totalAmount": 28.79,
+      "serviceFee": 0.99,
+      "deliveryType": "delivery",
+      "status": "delivered",
+      "stripeChargeId": "ch_stripe_payout_hxfv8ln",
+      "createdAt": "2026-07-25T12:19:47.731Z",
+      "items": [
+        {
+          "id": "item-8ovzn4p",
+          "orderId": "ord-n4s9ivx",
+          "dishId": "dish-se9gssn",
+          "price": 13.9,
+          "quantity": 2
+        }
+      ]
+    },
+    {
+      "id": "ord-fnvae4j",
+      "userId": "usr-i57y7v5",
+      "restaurantId": "rest-2fxqcum",
+      "totalAmount": 15.49,
+      "serviceFee": 0.99,
+      "deliveryType": "delivery",
+      "status": "delivered",
+      "stripeChargeId": "ch_stripe_payout_s915jld",
+      "createdAt": "2026-07-25T12:20:17.098Z",
+      "items": [
+        {
+          "id": "item-8t2528t",
+          "orderId": "ord-fnvae4j",
+          "dishId": "dish-5sagolz",
+          "price": 14.5,
+          "quantity": 1
+        }
+      ]
+    },
+    {
+      "id": "ord-fvhkg01",
+      "userId": "usr-client-1",
+      "restaurantId": "rest-burger",
+      "totalAmount": 26.79,
+      "serviceFee": 0.99,
+      "deliveryType": "click_and_collect",
+      "status": "pending",
+      "pointsEarned": 268,
+      "stripeChargeId": "ch_stripe_payout_90wr1ex",
+      "createdAt": "2026-09-08T11:05:37.183Z",
+      "items": [
+        {
+          "id": "item-qkgsbhj",
+          "orderId": "ord-fvhkg01",
+          "dishId": "d3333333-1111-1111-1111-111111111111",
+          "price": 12.9,
+          "quantity": 2
+        }
+      ]
+    }
+  ],
+  "currentUserSession": null,
   "formulas": [
     {
       "id": "free",
@@ -229,148 +994,870 @@
   ],
   "restaurateurs": [
     {
-      "createdAt": "2026-07-14T17:34:46.304Z",
-      "bio": "Chef napolitain passionné avec 15 ans d'expérience dans l'art de la pizza au feu de bois.",
-      "email": "partner@nonnapizza.fr",
-      "firstName": "Giovanni",
-      "restaurantId": "rest-nonna",
+      "userId": "usr-rest-nonna",
       "phone": "+33 6 12 34 56 78",
+      "createdAt": "2026-07-14T17:34:46.304Z",
       "lastName": "Rossi",
-      "id": "restaurateur-nonna",
       "profileImageUrl": "https://images.unsplash.com/photo-1577219491135-ce391730fb2c?w=150&auto=format&fit=crop&q=80",
-      "userId": "usr-rest-nonna"
+      "firstName": "Giovanni",
+      "id": "restaurateur-nonna",
+      "email": "partner@nonnapizza.fr",
+      "bio": "Chef napolitain passionné avec 15 ans d'expérience dans l'art de la pizza au feu de bois.",
+      "restaurantId": "rest-nonna"
     },
     {
-      "bio": "Maître Ramen formé à Tokyo, dévoué à perfectionner l'onctuosité de nos bouillons artisanaux.",
-      "createdAt": "2026-07-14T17:34:46.304Z",
+      "id": "restaurateur-o9taj3u",
+      "restaurantId": "rest-2fxqcum",
+      "email": "contact@kolr.fr",
+      "firstName": "Malick",
+      "phone": "+33619845649",
+      "bio": "Le Commencement : Une Rencontre au Carrefour de Deux Mondes\nL'histoire de SYWINS prend racine bien avant sa création, dans une alchimie improbable mais évidente : celle d'un père originaire du Sénégal et d'une mère venue des États-Unis. Deux cultures riches en traditions, en générosité et, surtout, en histoires de famille racontées autour d'une table.\n\nL’amour unit ces deux parcours venus de continents différents. En s'installant ensemble, ils ont naturellement fusionné leurs univers. Pour eux, cuisiner n'a jamais été simplement préparer un repas : c’était une manière de célébrer leurs racines, de raconter d'où ils venaient et de transmettre le meilleur de leur héritage à leurs enfants. C’est cette double empreinte culturelle — la chaleur, les épices et la profondeur des plats sénégalais d'un côté, le réconfort, la gourmandise et l'audace de la cuisine américaine de l'autre — qui a forgé l'identité de SYWINS.\n\nLa Naissance de SYWINS : Le Fait Maison comme ADN\nGrandir entre un maffé ou un thiéboudienne mijoté aux saveurs du Sénégal et des classiques réconfortants de la cuisine américaine, c'est baigner dans un monde où le goût prime sur tout. Face à cette richesse culinaire unique, l'idée de créer un lieu à l'image de cette double culture s'est imposée comme une évidence.\n\nSYWINS naît alors de cette volonté de partage : offrir une cuisine 100 % faite maison, préparée avec amour, où les frontières s'effacent pour laisser place au plaisir pur. Ici, chaque plat raconte une histoire de famille, un pont dressé entre Dakar et les États-Unis.\n\nUne Expérience Unique : Quand l'Afrique et l'Amérique se Donnent Rendez-Vous\nChez SYWINS, la promesse est simple mais exigeante :\n\nL'âme et la générosité sénégalaises : des épices maîtrisées, des plats mijotés qui réchauffent le cœur et rappellent la teranga (l'hospitalité légendaire sénégalaise).\n\nL'esprit et la gourmandise américains : des textures généreuses, des saveurs franches et un sens aigu du partage décomplexé.\n\nLe résultat ? Des spécialités culinaires uniques où le \"fait maison\" n'est pas un argument marketing, mais un engagement familial. Chaque recette est pensée comme un hommage aux parents, une célébration de leur rencontre et un cadeau offert à tous les gourmands en quête d'authentique.\n\nAujourd'hui, SYWINS continue d'écrire son histoire à travers chaque assiette, prouvant que les plus beaux voyages culinaires naissent souvent des plus belles histoires d'amour. ✨",
+      "lastName": "Winslow",
+      "createdAt": "2026-07-30T07:24:07.215Z",
+      "userId": "usr-hdlakiy",
+      "profileImageUrl": "/uploads/Joey-1785396243076.png"
+    },
+    {
       "firstName": "Kenji",
-      "email": "contact@tokyoramen.jp",
       "restaurantId": "rest-tokyo",
+      "id": "restaurateur-tokyo",
+      "email": "contact@tokyoramen.jp",
       "userId": "usr-rest-tokyo",
       "profileImageUrl": "https://images.unsplash.com/photo-1583394838336-acd977736f90?w=150&auto=format&fit=crop&q=80",
-      "id": "restaurateur-tokyo",
       "lastName": "Sato",
-      "phone": "+33 6 98 76 54 32"
+      "createdAt": "2026-07-14T17:34:46.304Z",
+      "phone": "+33 6 98 76 54 32",
+      "bio": "Maître Ramen formé à Tokyo, dévoué à perfectionner l'onctuosité de nos bouillons artisanaux."
     }
   ],
   "restaurateurMedia": [
     {
-      "title": "Nappage herbes fraîches et basilic",
-      "associatedDishId": "dish-nonna-1",
-      "mediaType": "video",
-      "url": "https://assets.mixkit.co/videos/preview/mixkit-putting-fresh-herbs-on-a-pizza-39981-large.mp4",
-      "createdAt": "2026-07-14T17:34:46.304Z",
       "isPosted": true,
+      "restaurantId": "rest-nonna",
       "restaurateurId": "restaurateur-nonna",
+      "createdAt": "2026-07-14T17:34:46.304Z",
       "id": "media-nonna-1",
-      "restaurantId": "rest-nonna"
+      "title": "Nappage herbes fraîches et basilic",
+      "url": "https://assets.mixkit.co/videos/preview/mixkit-putting-fresh-herbs-on-a-pizza-39981-large.mp4",
+      "associatedDishId": "dish-nonna-1",
+      "mediaType": "video"
     },
     {
-      "isPosted": true,
-      "restaurateurId": "restaurateur-nonna",
-      "id": "media-nonna-2",
-      "restaurantId": "rest-nonna",
       "title": "Versement de sirop d'érable",
+      "url": "https://assets.mixkit.co/videos/preview/mixkit-dripping-syrup-on-delicious-pancakes-34326-large.mp4",
+      "createdAt": "2026-07-14T17:34:46.304Z",
       "associatedDishId": "dish-nonna-3",
       "mediaType": "video",
-      "url": "https://assets.mixkit.co/videos/preview/mixkit-dripping-syrup-on-delicious-pancakes-34326-large.mp4",
-      "createdAt": "2026-07-14T17:34:46.304Z"
+      "isPosted": true,
+      "id": "media-nonna-2",
+      "restaurateurId": "restaurateur-nonna",
+      "restaurantId": "rest-nonna"
+    }
+  ],
+  "couriers": [
+    {
+      "id": "cur-1",
+      "name": "Karim Bensalah",
+      "email": "karim@fidfud.app",
+      "phone": "06 12 34 56 78",
+      "vehicle": "Scooter",
+      "status": "available",
+      "rating": 4.9,
+      "identityVerified": true,
+      "kbisVerified": true,
+      "siret": "83489102400018",
+      "drivingLicense": "12AB34567",
+      "password": "demo123"
+    },
+    {
+      "id": "cur-2",
+      "name": "Sarah Meunier",
+      "email": "sarah@fidfud.app",
+      "phone": "07 89 45 12 63",
+      "vehicle": "Velo",
+      "status": "available",
+      "rating": 4.8,
+      "identityVerified": true,
+      "kbisVerified": true,
+      "siret": "74291823100021"
+    },
+    {
+      "id": "cur-3",
+      "name": "Maxime Giraud",
+      "email": "maxime@fidfud.app",
+      "phone": "06 99 88 77 66",
+      "vehicle": "Voiture",
+      "status": "offline",
+      "rating": 4.7,
+      "identityVerified": false,
+      "kbisVerified": false
+    }
+  ],
+  "merchantApplications": [
+    {
+      "id": "app-1",
+      "partnerType": "restaurateur",
+      "applicantName": "Jean-Luc Moreau",
+      "email": "contact@bistrotgourmand-lyon.fr",
+      "phone": "06 18 29 40 51",
+      "city": "Lyon",
+      "status": "approved",
+      "createdAt": "2026-07-28T17:52:21.806Z",
+      "establishmentName": "Le Bistrot Gourmand Lyon",
+      "siret": "89102485900012",
+      "cuisineCategory": "Cuisine Lyonnaise & Terroir",
+      "notes": "Dossier validé. Kit caméra Fidfud expédié."
+    },
+    {
+      "id": "app-2",
+      "partnerType": "foodie_reviewer",
+      "applicantName": "Camille Vlogs Gourmet",
+      "email": "camille@foodievlogs.tv",
+      "phone": "07 65 43 21 09",
+      "city": "Paris",
+      "status": "pending",
+      "createdAt": "2026-07-31T05:52:21.806Z",
+      "channelName": "Camille Foodie Review",
+      "socialPlatform": "youtube",
+      "platformHandle": "@CamilleFoodieTV",
+      "followerCount": "145K abonnés",
+      "notes": "Spécialiste du testing de smash burgers et ramen en direct."
+    },
+    {
+      "id": "app-3",
+      "partnerType": "culinary_show_host",
+      "applicantName": "Chef Youssef El-Hakim",
+      "email": "masterclass@chefyoussef.com",
+      "phone": "06 99 88 77 11",
+      "city": "Marseille",
+      "status": "pending",
+      "createdAt": "2026-07-31T13:52:21.806Z",
+      "showTitle": "L’Académie des Saveurs Méditerranéennes",
+      "cookingDiscipline": "Cuisine Méditerranéenne & Pâtisserie Orientale",
+      "masterclassPrice": "14.90€ / émission",
+      "notes": "Propose 3 émissions hebdomadaires avec kits d’ingrédients livrés à domicile."
     }
   ],
   "designSettings": {
-    "accentColor": "#FF5C00",
-    "backgroundColor": "#050506",
-    "textColor": "#FFFFFF",
-    "appName": "FIDFUD",
-    "logoUrl": "data:image/png;base64,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",
+    "accentColor": "#F59E0B",
+    "backgroundColor": "#0A0908",
+    "textColor": "#F5F5F4",
+    "appName": "",
+    "logoUrl": "/uploads/logo_icone-1785702747479.png",
     "heroTitle": "Vidéos Gourmandes, Livraison Instantanée.",
     "promoMessage": "⚡ COMMANDEZ EN DIRECT DEPUIS LE FEED VIDÉO ! 50% DE RÉDUCTION SUR VOTRE PREMIER PANIER ⚡",
     "borderRadius": "16px",
     "bannerUrl": "https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=1600&auto=format&fit=crop&q=80",
-    "typography": "sans",
+    "typography": "Space Grotesk",
     "layoutPreset": "whatnot",
     "customIcons": {
-      "iconFollow": "Plus",
-      "iconLoyalty": "Coins",
       "iconShare": "Share2",
-      "iconMute": "Volume2",
-      "iconProfile": "User",
+      "iconCart": "ShoppingBag",
       "iconSend": "Send",
+      "iconSearch": "Search",
+      "iconLoyalty": "Coins",
+      "iconMute": "Volume2",
+      "iconOrder": "Zap",
+      "iconFollow": "Plus",
+      "iconReview": "Star",
+      "iconLike": "Heart",
+      "iconFilter": "Sliders",
+      "iconProfile": "User",
       "iconHome": "Home",
       "iconUnmute": "VolumeX",
-      "iconGift": "Gift",
-      "iconCart": "ShoppingBag",
-      "iconLike": "Heart",
-      "iconOrder": "Zap",
-      "iconReview": "Star",
-      "iconSearch": "Search",
-      "iconFilter": "Sliders"
+      "iconGift": "Gift"
     },
     "desktopAds": [
       {
-        "mediaType": "gif",
-        "id": "ad-top-sidebar",
+        "clickUrl": "#",
         "mediaUrl": "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExM3Y2czA5MXNqdmtnaW5vYmN5enU3MHdwdG1scmd6bjZubG42Z3J3ciZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/l0O9xBeS9EUnIy9by/giphy.gif",
         "title": "Nonna's Fresh Truffle Pizza 🍕",
-        "isActive": true,
-        "clickUrl": "#",
-        "subtitle": "Commandez notre pizza cuite minute au feu de bois !"
+        "id": "ad-top-sidebar",
+        "mediaType": "gif",
+        "subtitle": "Commandez notre pizza cuite minute au feu de bois !",
+        "isActive": true
       },
       {
-        "subtitle": "Découvrez le ramen Tonkotsu fait maison.",
-        "clickUrl": "#",
-        "isActive": true,
-        "mediaUrl": "https://assets.mixkit.co/videos/preview/mixkit-fresh-vegetables-and-meat-sizzling-in-a-wok-pan-40242-large.mp4",
+        "id": "ad-bottom-sidebar",
         "title": "Tokyo Ramen Special 🍜",
+        "subtitle": "Découvrez le ramen Tonkotsu fait maison.",
+        "isActive": true,
         "mediaType": "video",
-        "id": "ad-bottom-sidebar"
+        "clickUrl": "#",
+        "mediaUrl": "/uploads/culinary-fallback.mp4"
       }
     ],
     "sectionsVisible": {
-      "showFeaturedProducts": true,
-      "showHero": true,
-      "showChefSpotlight": true,
       "showVideoFeed": true,
-      "showLoyaltyClubBanner": true
+      "showLoyaltyClubBanner": true,
+      "showChefSpotlight": true,
+      "showHero": true,
+      "showFeaturedProducts": true
     },
     "featuredDishIds": [],
     "customFeatures": {
-      "enableTipsAndFlowers": true,
+      "enableLeaderOfTheMonth": true,
       "enableStripeCommissionSplit": true,
       "enableLiveOrdersHistory": true,
       "enableLoyaltyPoints": true,
-      "enableLeaderOfTheMonth": true,
-      "enableDeliveryCouriers": true
+      "enableDeliveryCouriers": true,
+      "enableTipsAndFlowers": true
     },
     "createdFeatures": [
       {
-        "cta": "Activer",
-        "badge": "PRATIQUE",
-        "description": "Commandez en direct et retirez votre plat sans attente en restaurant.",
         "title": "Retrait Express 🏃‍♂️",
+        "id": "feat-1",
+        "badge": "PRATIQUE",
+        "cta": "Activer",
         "icon": "⚡",
-        "id": "feat-1"
+        "description": "Commandez en direct et retirez votre plat sans attente en restaurant."
       },
       {
-        "cta": "En savoir plus",
-        "description": "Livré exclusivement par nos livreurs à vélo pour un impact carbone neutre.",
         "badge": "VERT",
+        "description": "Livré exclusivement par nos livreurs à vélo pour un impact carbone neutre.",
         "title": "Livraison Éco-Locale 🚴",
         "icon": "🌿",
+        "cta": "En savoir plus",
         "id": "feat-2"
       }
     ],
     "logoSizeMobile": 34,
-    "logoSizeTablet": 40,
-    "logoSizeDesktop": 48,
-    "autoSaveEnabled": false,
+    "logoSizeTablet": 31,
+    "logoSizeDesktop": 63,
+    "autoSaveEnabled": true,
     "mobileBgImage": "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExdzB0YmVqZHQ3NHd1ZWhnaWN6MDc3bHVtdHVlMXZmdnV3d3p3dnA2diZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/YOnPXj68PH7vP7bJvN/giphy.gif",
     "desktopBgImage": "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExM2k0MHQzbzBhOWxhc2pxczEzbDJzZWszMm40bzNmd2F5amwyMTNyYiZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/LcoK2zRKbQlUs/giphy.gif",
     "mobileBgType": "image",
-    "desktopBgColor": "#747481",
-    "desktopBgType": "ad",
+    "desktopBgColor": "#0909ec",
+    "desktopBgType": "color",
     "enableEngagementAnimations": true,
-    "enableFireworks": true
+    "enableFireworks": true,
+    "splashLogoUrl": "data:image/jpeg;base64,/9j/4QhoRXhpZgAASUkqAAgAAAADAA4BAgD4AwAAMgAAADsBAgAlAAAAKgQAAGmHBAABAAAATwQAA...[truncated-for-firestore]",
+    "isVisualEditorActive": false,
+    "headerConfig": {
+      "secondaryLogoType": "badge",
+      "logoSizeMobile": 34,
+      "logoUrl": "/uploads/logo_icone-1785702747479.png",
+      "logoPosition": "left",
+      "backgroundOpacity": 40,
+      "secondaryLogoText": "FEED AND FOOD",
+      "secondaryLogoUrl": "/uploads/logo_1-1785702759451.png",
+      "logoSizeDesktop": 63,
+      "backgroundColor": "#0B0B0C",
+      "visibleIcons": {
+        "ordersHistory": true,
+        "account": true,
+        "searchBar": true,
+        "djLive": true,
+        "gpsLocation": true,
+        "hamburgerMenu": true,
+        "cart": true
+      },
+      "enableBackdropBlur": true,
+      "showSecondaryLogo": true
+    },
+    "mobileBgColor": "#277916",
+    "homePresentationVideoUrl": "/uploads/culinary-fallback.mp4",
+    "customLikeMsg": "Double-tapez ou cliquez ici pour envoyer un super J'aime ! ❤️",
+    "engagementPromptType": "alternate",
+    "homeHeroSubtitle": "Découvrez Fidfud, l'application de social food commerce qui fusionne vidéos verticales et commande instantanée. Trouvez les meilleurs restos locaux en un clic !",
+    "customGiftMsg": "Soutenez le chef ! Cliquez pour lui offrir un cadeau de force ! 🎁",
+    "secondaryLogoType": "badge",
+    "requireSiret": true,
+    "showSecondaryLogo": true,
+    "homeHeroBgGradientStart": "#ff9500",
+    "secondaryLogoText": "FEED AND FOOD",
+    "engagementInterval": 20,
+    "splashTitle": "Fid-fud ",
+    "feedDefaultSort": "distance",
+    "splashSubtitle": "Scrollez. Salivez. Commandez.",
+    "secondaryLogoUrl": "/uploads/logo_1-1785702759451.png",
+    "splashGlowColor1": "#ffffff",
+    "requireAddress": true,
+    "customCommentMsg": "Cliquez ici pour laisser un commentaire ou donner votre avis ! 💬",
+    "desktopBgVideo": "",
+    "desktopBgAdClickUrl": "",
+    "desktopBgAdTitle": "",
+    "mobileBgVideo": "",
+    "mobileBgAdClickUrl": "",
+    "mobileBgAdTitle": "",
+    "homeShowHero": false
   },
-  "isFirestoreUnreachable": false
+  "popups": [
+    {
+      "id": "pop-1",
+      "title": "🎧 Session Live DJs & Sound Systems",
+      "subtitle": "Rejoignez les espaces uniques où les DJs de renom écoutent de la musique, mixent en direct et créent l’ambiance des meilleurs spots gastronomiques !",
+      "category": "dj_music",
+      "mediaType": "image",
+      "mediaUrl": "https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?w=1000",
+      "imageFit100": true,
+      "ctaText": "🎧 Écouter & Suivre les DJs",
+      "ctaLink": "djs",
+      "active": true,
+      "displayDelaySeconds": 3,
+      "triggerType": "auto_popup"
+    },
+    {
+      "id": "pop-2",
+      "title": "🍳 Chaînes Culinaires & Crash-Tests",
+      "subtitle": "Explorez les chaînes culinaires et émissions gourmandes qui testent, évaluent et révèlent en toute transparence les cuisines de restaurants !",
+      "category": "culinary_channels",
+      "mediaType": "image",
+      "mediaUrl": "https://images.unsplash.com/photo-1556910103-1c02745aae4d?w=1000",
+      "imageFit100": true,
+      "ctaText": "🍳 Explorer les Chaînes Culinaires",
+      "ctaLink": "channels",
+      "active": true,
+      "displayDelaySeconds": 8,
+      "triggerType": "auto_popup"
+    },
+    {
+      "id": "pop-3",
+      "title": "📺 YouTubers Food & Dégustations Cash",
+      "subtitle": "Suivez les YouTubers et créateurs food les plus célèbres qui dégustent les plats signatures et donnent leur avis sans filtre !",
+      "category": "food_youtubers",
+      "mediaType": "image",
+      "mediaUrl": "https://images.unsplash.com/photo-1540189549336-e6e99c3679fe?w=1000",
+      "imageFit100": true,
+      "ctaText": "📺 Regarder les YouTubers Food",
+      "ctaLink": "youtubers",
+      "active": true,
+      "displayDelaySeconds": 15,
+      "triggerType": "auto_popup"
+    }
+  ],
+  "djSessions": [
+    {
+      "id": "dj-1",
+      "djName": "DJ Alex Keys",
+      "djAvatar": "https://images.unsplash.com/photo-1571266028243-3716f02d2d2e?w=200&auto=format&fit=crop&q=80",
+      "restaurantId": "rest-1",
+      "restaurantName": "Villa Gourmet - Paris 11e",
+      "genre": "Deep House & Organic Lounge",
+      "currentMood": "Deep House",
+      "listenersCount": 1420,
+      "videoUrl": "/uploads/culinary-fallback.mp4",
+      "coverImage": "https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?w=800&auto=format&fit=crop&q=80",
+      "isLive": true,
+      "bpm": 124,
+      "currentTrack": {
+        "title": "Midnight Aperitivo (Villa Mix)",
+        "artist": "Alex Keys feat. Nora B",
+        "releaseYear": "2026"
+      },
+      "bio": "Artiste résident Fidfud. Fusionne beats électro chaleureux & cuivres jazz pour accompagner les repas gastronomiques.",
+      "youtubeChannelUrl": "https://www.youtube.com/@AlexKeysDJ"
+    },
+    {
+      "id": "dj-2",
+      "djName": "DJ Nina Groove",
+      "djAvatar": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&auto=format&fit=crop&q=80",
+      "restaurantId": "rest-2",
+      "restaurantName": "Le Bistro Mousse - Voltaire",
+      "genre": "Nu-Jazz & Chillout Vinyl",
+      "currentMood": "Sunset Chill",
+      "listenersCount": 890,
+      "videoUrl": "/uploads/culinary-2.mp4",
+      "coverImage": "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=800&auto=format&fit=crop&q=80",
+      "isLive": true,
+      "bpm": 112,
+      "currentTrack": {
+        "title": "Velvet Espresso Martini",
+        "artist": "Nina Groove & St Germain",
+        "releaseYear": "2025"
+      },
+      "bio": "Sets vinyles rares, soul, funk et bossa nova douce pour créer une atmosphère chaleureuse et intimiste.",
+      "youtubeChannelUrl": "https://www.youtube.com/@NinaGrooveMusic"
+    }
+  ],
+  "culinaryShows": [
+    {
+      "id": "show-1",
+      "showName": "Cuisine En Direct & Masterclasses",
+      "hostName": "Chef Philippe & Équipe",
+      "avatar": "https://images.unsplash.com/photo-1577219491135-ce391730fb2c?w=200",
+      "coverUrl": "https://images.unsplash.com/photo-1556910103-1c02745aae4d?w=1000",
+      "mediaType": "image",
+      "mediaUrl": "https://images.unsplash.com/photo-1556910103-1c02745aae4d?w=1000",
+      "description": "L’émission référence qui s’immisce dans les coulisses des cuisines d’exception et teste la préparation en temps réel !",
+      "youtubeChannelUrl": "https://www.youtube.com/@MasterChefFrance",
+      "featuredRestaurantName": "Villa Gourmet",
+      "rating": 4.9,
+      "active": true
+    },
+    {
+      "id": "show-2",
+      "showName": "Les Secrets du Chef Flambé",
+      "hostName": "Gourmet TV",
+      "avatar": "https://images.unsplash.com/photo-1583394838336-acd977736f90?w=200",
+      "coverUrl": "https://images.unsplash.com/photo-1514933651103-005eec06c04b?w=1000",
+      "mediaType": "video",
+      "mediaUrl": "/uploads/culinary-2.mp4",
+      "description": "Immersion dans la cuisson des viandes d’exception, flambages au cognac et sauces secretes.",
+      "youtubeChannelUrl": "https://www.youtube.com/@GourmetTVFrance",
+      "featuredRestaurantName": "Le Bistro Mousse",
+      "rating": 4.8,
+      "active": true
+    }
+  ],
+  "foodYouTubers": [
+    {
+      "id": "yt-1",
+      "creatorName": "Florian OnAir",
+      "channelName": "FlorianOnAir Official",
+      "subscribersCount": "850K",
+      "avatar": "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=200",
+      "coverUrl": "https://images.unsplash.com/photo-1540189549336-e6e99c3679fe?w=1000",
+      "mediaType": "image",
+      "mediaUrl": "https://images.unsplash.com/photo-1540189549336-e6e99c3679fe?w=1000",
+      "bio": "Test des pépites culinaires, street food du monde et plus grands burgers de France sans concession !",
+      "youtubeChannelUrl": "https://www.youtube.com/@FlorianOnAir",
+      "featuredVideoUrl": "/uploads/culinary-2.mp4",
+      "rating": 4.9,
+      "active": true
+    },
+    {
+      "id": "yt-2",
+      "creatorName": "Valouzz Food",
+      "channelName": "Valouzz Gourmand",
+      "subscribersCount": "1.2M",
+      "avatar": "https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?w=200",
+      "coverUrl": "https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=1000",
+      "mediaType": "image",
+      "mediaUrl": "https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=1000",
+      "bio": "Dégustations géantes, crash-tests de concepts virtuels et recettes de chefs.",
+      "youtubeChannelUrl": "https://www.youtube.com/@Valouzz",
+      "featuredVideoUrl": "/uploads/culinary-3.mp4",
+      "rating": 4.8,
+      "active": true
+    }
+  ],
+  "recipes": [
+    {
+      "id": "rec-omelette-baveuse",
+      "title": "Omelette Baveuse aux Fines Herbes & Comté AOP",
+      "description": "La véritable technique bistronomique pour une omelette croustillante à l'extérieur et délicieusement baveuse au cœur en moins de 60 secondes chrono.",
+      "category": "Omelettes",
+      "authorId": "usr-admin-1",
+      "authorName": "Chef Thomas (Fidfud)",
+      "authorRole": "admin",
+      "authorAvatar": "https://images.unsplash.com/photo-1577219491135-ce391730fb2c?w=200",
+      "prepTimeMinutes": 2,
+      "cookTimeMinutes": 1,
+      "difficulty": "Facile",
+      "budgetLevel": "€",
+      "servings": 2,
+      "calories": 280,
+      "videoUrl": "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4",
+      "thumbnailUrl": "https://images.unsplash.com/photo-1510693206972-df098062cb71?w=800",
+      "videoSourceType": "direct",
+      "ingredients": [
+        {
+          "name": "Œufs frais plein air",
+          "quantity": "3 gros œufs",
+          "emoji": "🥚"
+        },
+        {
+          "name": "Beurre doux ou demi-sel",
+          "quantity": "20g",
+          "emoji": "🧈"
+        },
+        {
+          "name": "Comté 18 mois râpé",
+          "quantity": "30g",
+          "emoji": "🧀"
+        },
+        {
+          "name": "Ciboulette & cerfeuil frais",
+          "quantity": "1 poignée",
+          "emoji": "🌿"
+        },
+        {
+          "name": "Fleur de sel & poivre noir",
+          "quantity": "1 pincée",
+          "emoji": "🧂"
+        }
+      ],
+      "steps": [
+        {
+          "stepNumber": 1,
+          "title": "Battre les œufs",
+          "instruction": "Casser les 3 œufs dans un bol avec sel, poivre et la ciboulette ciselée. Battre vivement à la fourchette pendant 20 secondes.",
+          "tip": "Ne battez pas trop longtemps pour garder de la texture."
+        },
+        {
+          "stepNumber": 2,
+          "title": "Chauffer la poêle",
+          "instruction": "Faire fondre le beurre à feu vif dans une poêle antiadhésive jusqu'à ce qu'il soit bien mousseux (sans brunir).",
+          "timerSeconds": 15
+        },
+        {
+          "stepNumber": 3,
+          "title": "Cuisson express 45s",
+          "instruction": "Verser les œufs, ramener vivement les bords vers le centre avec une spatule en agitant la poêle pour créer un crémeux onctueux.",
+          "timerSeconds": 45,
+          "tip": "Le secret : stopper la cuisson dès que le centre est brillant et soyeux !"
+        },
+        {
+          "stepNumber": 4,
+          "title": "Fromage & Roulage",
+          "instruction": "Parsemer le Comté au centre, rabattre un côté puis rouler délicatement en fuseau. Servir immédiatement sur assiette chaude."
+        }
+      ],
+      "tips": [
+        "Utilisez une poêle chaude et du beurre bien mousseux.",
+        "Ne laissez jamais l'omelette sécher : retirez du feu 10 secondes avant la texture désirée car elle continue de cuire dans l'assiette."
+      ],
+      "dietaryTags": [
+        "Végétarien",
+        "Express < 3 min",
+        "Riche en Protéines",
+        "Sans Gluten"
+      ],
+      "likesCount": 238,
+      "createdAt": "2026-08-22T12:13:05.115Z",
+      "isApproved": true,
+      "isFeatured": true
+    },
+    {
+      "id": "rec-omelette-soufflee",
+      "title": "Omelette Soufflée Japonaise Nuage (Tamagoyaki Express)",
+      "description": "Une omelette ultra légère, aérienne comme un soufflé qui fond littéralement en bouche. Idéale pour le petit-déjeuner ou le brunch.",
+      "category": "Omelettes",
+      "authorId": "usr-client-1",
+      "authorName": "Yuki Tanaka",
+      "authorRole": "client",
+      "authorAvatar": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200",
+      "prepTimeMinutes": 3,
+      "cookTimeMinutes": 2,
+      "difficulty": "Facile",
+      "budgetLevel": "€",
+      "servings": 1,
+      "calories": 220,
+      "videoUrl": "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4",
+      "thumbnailUrl": "https://images.unsplash.com/photo-1525351484163-7529414344d8?w=800",
+      "videoSourceType": "direct",
+      "ingredients": [
+        {
+          "name": "Œufs extra frais",
+          "quantity": "2",
+          "emoji": "🥚"
+        },
+        {
+          "name": "Sauce soja sucrée",
+          "quantity": "1 c. à café",
+          "emoji": "🥢"
+        },
+        {
+          "name": "Huile de sésame grillé",
+          "quantity": "1 filet",
+          "emoji": "🍶"
+        },
+        {
+          "name": "Oignon vert haché",
+          "quantity": "1 c. à soupe",
+          "emoji": "🧅"
+        }
+      ],
+      "steps": [
+        {
+          "stepNumber": 1,
+          "title": "Séparation",
+          "instruction": "Séparer le blanc du jaune. Monter le blanc en neige légère avec une pincée de sel.",
+          "timerSeconds": 60
+        },
+        {
+          "stepNumber": 2,
+          "title": "Mélange délicat",
+          "instruction": "Mélanger le jaune avec la sauce soja, puis incorporer délicatement le blanc sans le casser."
+        },
+        {
+          "stepNumber": 3,
+          "title": "Cuisson couverte",
+          "instruction": "Verser dans une petite poêle huilée à feu très doux, couvrir pendant 90 secondes.",
+          "timerSeconds": 90
+        },
+        {
+          "stepNumber": 4,
+          "title": "Finition",
+          "instruction": "Plier en demi-lune, parsemer d'oignon vert et servir immédiatement bien chaud."
+        }
+      ],
+      "tips": [
+        "Cuire à feu très doux et sous couvercle pour que la vapeur gonfle le soufflé."
+      ],
+      "dietaryTags": [
+        "Express < 5 min",
+        "Japonais",
+        "Végétarien"
+      ],
+      "likesCount": 184,
+      "createdAt": "2026-08-22T12:13:05.115Z",
+      "isApproved": true,
+      "isFeatured": true
+    },
+    {
+      "id": "rec-omelette-champignons",
+      "title": "Omelette Forestière aux Champignons Sautés & Persillade",
+      "description": "Généreuse omelette garnie de champignons de Paris sautés à l'ail et au persil frais, avec une touche de crème.",
+      "category": "Omelettes",
+      "authorId": "usr-rest-nonna",
+      "authorName": "Chef Marco (La Nonna)",
+      "authorRole": "restaurant",
+      "authorAvatar": "https://images.unsplash.com/photo-1583394838336-acd977736f90?w=200",
+      "prepTimeMinutes": 3,
+      "cookTimeMinutes": 2,
+      "difficulty": "Facile",
+      "budgetLevel": "€",
+      "servings": 2,
+      "calories": 310,
+      "videoUrl": "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4",
+      "thumbnailUrl": "https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=800",
+      "videoSourceType": "direct",
+      "ingredients": [
+        {
+          "name": "Œufs",
+          "quantity": "3",
+          "emoji": "🥚"
+        },
+        {
+          "name": "Champignons émincés",
+          "quantity": "80g",
+          "emoji": "🍄"
+        },
+        {
+          "name": "Gousse d'ail hachée",
+          "quantity": "1/2",
+          "emoji": "🧄"
+        },
+        {
+          "name": "Persil plat frais",
+          "quantity": "1 c. à soupe",
+          "emoji": "🌿"
+        },
+        {
+          "name": "Beurre & Huile d'olive",
+          "quantity": "15g",
+          "emoji": "🧈"
+        }
+      ],
+      "steps": [
+        {
+          "stepNumber": 1,
+          "title": "Poêler les champignons",
+          "instruction": "Faire dorer les champignons à feu vif 1 minute avec l'ail et le persil.",
+          "timerSeconds": 60
+        },
+        {
+          "stepNumber": 2,
+          "title": "Ajouter les œufs",
+          "instruction": "Verser les œufs battus par-dessus, remuer doucement pour incorporer la garniture.",
+          "timerSeconds": 45
+        },
+        {
+          "stepNumber": 3,
+          "title": "Pliage & dressage",
+          "instruction": "Rabattre et glisser dans l'assiette avec un tour de moulin à poivre."
+        }
+      ],
+      "tips": [
+        "Salez les champignons uniquement en fin de cuisson pour éviter qu'ils ne rendent trop d'eau."
+      ],
+      "dietaryTags": [
+        "Végétarien",
+        "Express",
+        "Traditionnel"
+      ],
+      "likesCount": 156,
+      "createdAt": "2026-08-22T12:13:05.115Z",
+      "isApproved": true
+    },
+    {
+      "id": "rec-avocado-minute",
+      "title": "Avocado Toast & Œuf Coulant Minute",
+      "description": "Le toast parfait du matin : pain au levain croustillant, écrasé d'avocat au citron vert et œuf mollet au piment d'Espelette.",
+      "category": "Snacks & Express",
+      "authorId": "usr-client-1",
+      "authorName": "Camille Gourmande",
+      "authorRole": "client",
+      "authorAvatar": "https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=200",
+      "prepTimeMinutes": 4,
+      "cookTimeMinutes": 2,
+      "difficulty": "Facile",
+      "budgetLevel": "€€",
+      "servings": 1,
+      "calories": 340,
+      "videoUrl": "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerMeltdowns.mp4",
+      "thumbnailUrl": "https://images.unsplash.com/photo-1525351484163-7529414344d8?w=800",
+      "videoSourceType": "direct",
+      "ingredients": [
+        {
+          "name": "Tranche de pain au levain",
+          "quantity": "1 grande",
+          "emoji": "🍞"
+        },
+        {
+          "name": "Avocat mûr",
+          "quantity": "1/2",
+          "emoji": "🥑"
+        },
+        {
+          "name": "Œuf frais",
+          "quantity": "1",
+          "emoji": "🥚"
+        },
+        {
+          "name": "Jus de citron vert & Espelette",
+          "quantity": "1 filet",
+          "emoji": "🍋"
+        }
+      ],
+      "steps": [
+        {
+          "stepNumber": 1,
+          "instruction": "Griller la tranche de pain au grille-pain."
+        },
+        {
+          "stepNumber": 2,
+          "instruction": "Écraser l'avocat à la fourchette avec jus de citron, sel et piment d'Espelette."
+        },
+        {
+          "stepNumber": 3,
+          "instruction": "Cuire l'œuf au plat ou mollet 3 minutes."
+        },
+        {
+          "stepNumber": 4,
+          "instruction": "Tartiner le pain et déposer l'œuf chaud coulant sur le dessus."
+        }
+      ],
+      "tips": [
+        "Ajoutez des graines de sésame noir ou des flocons de sel pour le croquant."
+      ],
+      "dietaryTags": [
+        "Healthy",
+        "Végétarien",
+        "Brunch"
+      ],
+      "likesCount": 312,
+      "createdAt": "2026-08-22T12:13:05.115Z",
+      "isApproved": true
+    }
+  ],
+  "recipeCategories": [
+    {
+      "id": "cat-omelettes",
+      "name": "Omelettes",
+      "emoji": "🍳",
+      "description": "Recettes d'omelettes baveuses, soufflées, japonaises et express en moins d'1 minute",
+      "isSystem": true,
+      "createdAt": "2026-08-22T12:13:05.115Z"
+    },
+    {
+      "id": "cat-express",
+      "name": "Snacks & Express",
+      "emoji": "⚡",
+      "description": "Plats et encas ultra rapides pour les gourmands pressés",
+      "isSystem": true,
+      "createdAt": "2026-08-22T12:13:05.115Z"
+    },
+    {
+      "id": "cat-desserts",
+      "name": "Desserts Minutes",
+      "emoji": "🍰",
+      "description": "Gourmandises sucrées, crêpes et douceurs express",
+      "isSystem": true,
+      "createdAt": "2026-08-22T12:13:05.115Z"
+    },
+    {
+      "id": "cat-healthy",
+      "name": "Healthy & Frais",
+      "emoji": "🥗",
+      "description": "Assiettes saines, énergisantes et légères",
+      "isSystem": true,
+      "createdAt": "2026-08-22T12:13:05.115Z"
+    },
+    {
+      "id": "cat-sauces",
+      "name": "Sauces & Secrets",
+      "emoji": "🥣",
+      "description": "Les sauces et assaisonnements des chefs",
+      "isSystem": true,
+      "createdAt": "2026-08-22T12:13:05.115Z"
+    }
+  ],
+  "isFirestoreUnreachable": true,
+  "deletedRestaurantIds": [
+    "rest-xzlfjmb",
+    "rest-lpls4e5",
+    "rest-2fxqcum",
+    "rest-nonna",
+    "rest-tokyo",
+    "rest-burger",
+    "rest-4incuxn",
+    "rest-pp7az7e",
+    "rest-mpuukhr",
+    "rest-io8kcv5",
+    "rest-bi662x0",
+    "rest-xhbdhd4",
+    "rest-gyys5pu",
+    "rest-z07tmi3"
+  ],
+  "deletedDishIds": [
+    "dish-se9gssn",
+    "dish-2o8k5sk",
+    "dish-5sagolz",
+    "dish-tb8yo4t",
+    "d1111111-1111-1111-1111-111111111111",
+    "d1111111-2222-2222-2222-222222222222",
+    "d2222222-1111-1111-1111-111111111111",
+    "d2222222-2222-2222-2222-222222222222",
+    "d3333333-1111-1111-1111-111111111111",
+    "d3333333-2222-2222-2222-222222222222",
+    "dish-gz5nlua",
+    "dish-0mr1fai",
+    "dish-75jsidg",
+    "dish-xjh2ozy",
+    "dish-vn3pyax",
+    "dish-wzea1cx",
+    "dish-hjadqt6",
+    "dish-gyx1c4c",
+    "dish-v3ynkxq",
+    "dish-jkil4nz",
+    "dish-u5j6dp6",
+    "dish-sguafgb",
+    "dish-2w38w2v",
+    "dish-wl5dp5w",
+    "dish-98d2m35",
+    "dish-zdfotha",
+    "dish-ylhd4ju",
+    "dish-46ftmfi",
+    "dish-2xpmubb",
+    "dish-kckf4hc"
+  ],
+  "deletedVideoIds": [
+    "vid-a0ndaqv",
+    "vid-f8ptnpx",
+    "vid-le0iw4a",
+    "vid-s73b8tt",
+    "vid-vqz7apc",
+    "vid-burger-1",
+    "vid-c1um7om",
+    "vid-z1p8c9w",
+    "vid-q72unx9",
+    "vid-e6l1kpz",
+    "vid-ogeuebl",
+    "vid-44on61r",
+    "vid-ti5e756",
+    "vid-xqz4pod"
+  ],
+  "deletedOrderIds": [],
+  "deletedMediaIds": [],
+  "deletedBoutiqueIds": [],
+  "deletedPopupIds": [],
+  "deletedDJIds": [],
+  "deletedShowIds": [],
+  "deletedYouTuberIds": [],
+  "deletedRecipeIds": [],
+  "deletedRecipeCategoryIds": []
 }

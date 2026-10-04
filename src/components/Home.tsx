@@ -1,6 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { getSafeVideoUrl, STABLE_CULINARY_FALLBACK_VIDEOS, isDirectPlayableVideo } from '../utils/videoUtils';
+import LazyImage from './LazyImage';
+import { BecomePartnerModal } from './BecomePartnerModal';
 import { 
   Play, 
+  Pause,
+  Volume2,
+  VolumeX,
   ShoppingBag, 
   Plus, 
   Eye, 
@@ -24,7 +30,10 @@ import {
   Users,
   TrendingUp,
   ChefHat,
-  Tv
+  Tv,
+  LogIn,
+  UserPlus,
+  ArrowRight
 } from 'lucide-react';
 import { Video, Restaurant, Dish } from '../types';
 import { motion } from 'motion/react';
@@ -56,6 +65,18 @@ export const Home: React.FC<HomeProps> = ({
   const [sellerName, setSellerName] = useState('');
   const [sellerSpecialty, setSellerSpecialty] = useState('');
   const [sellerSubmitted, setSellerSubmitted] = useState(false);
+
+  // Logo error handling state
+  const [logoError, setLogoError] = useState(false);
+
+  // Presentation Video state
+  const [isPlayingPresVideo, setIsPlayingPresVideo] = useState(true);
+  const [isPresVideoMuted, setIsPresVideoMuted] = useState(true);
+  const presVideoRef = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    setLogoError(false);
+  }, [designSettings?.logoUrl]);
 
   // Toggle FAQ item
   const toggleFaq = (index: number) => {
@@ -120,14 +141,20 @@ export const Home: React.FC<HomeProps> = ({
       <header className="sticky top-0 z-[60] bg-[#050506]/95 backdrop-blur-md border-b border-white/5 py-2.5 sm:py-3.5 px-3 sm:px-6 md:px-12 flex items-center justify-between w-full">
         {/* Left Side: Logo (Not clickable, static display for guest users) */}
         <div className="flex items-center gap-2 shrink-0">
-          {designSettings?.logoUrl ? (
-            <img src={designSettings.logoUrl} alt="Logo" className="w-8 h-8 sm:w-10 sm:h-10 object-cover rounded-xl border border-white/10" />
+          {!logoError && Boolean(designSettings?.logoUrl?.trim()) ? (
+            <img 
+              src={designSettings.logoUrl.trim()} 
+              alt="Logo" 
+              onError={() => setLogoError(true)}
+              className="w-8 h-8 sm:w-10 sm:h-10 object-cover rounded-xl border border-white/10" 
+            />
           ) : (
             <div 
               style={{ backgroundColor: designSettings?.homeHeroBgGradientStart || accentColor }}
-              className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center text-white font-black text-lg sm:text-xl shadow-[0_0_15px_rgba(255,92,0,0.4)]"
+              className="h-8 sm:h-10 px-3 rounded-xl flex items-center justify-center gap-1.5 text-white font-black text-xs sm:text-sm shadow-[0_0_15px_rgba(255,92,0,0.4)] border border-white/20 uppercase tracking-tight italic bg-gradient-to-r from-[#FF5C00] to-[#FF8C00]"
             >
-              🍳
+              <span>🍳</span>
+              <span>{designSettings?.appName || 'FIDFUD'}</span>
             </div>
           )}
         </div>
@@ -261,10 +288,12 @@ export const Home: React.FC<HomeProps> = ({
             {/* In-Phone Screen Container */}
             <div className="w-full h-full rounded-[34px] overflow-hidden relative flex flex-col bg-[#050506]">
               {/* Video background stream mockup */}
-              <img 
+              <LazyImage 
                 src="https://images.unsplash.com/photo-1556910103-1c02745aae4d?w=400&auto=format&fit=crop&q=80" 
                 alt="Chef Cooking Live" 
-                className="absolute inset-0 w-full h-full object-cover opacity-90 scale-105"
+                sizeType="card"
+                containerClassName="absolute inset-0 w-full h-full"
+                className="w-full h-full object-cover opacity-90 scale-105"
               />
               {/* Dark overlay for UI visibility */}
               <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/30 to-black/60 pointer-events-none" />
@@ -292,10 +321,12 @@ export const Home: React.FC<HomeProps> = ({
                   </span>
                 </div>
                 <div className="flex gap-2 items-center">
-                  <img 
+                  <LazyImage 
                     src="https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=100&auto=format&fit=crop&q=80" 
                     alt="Burger" 
-                    className="w-10 h-10 rounded-lg object-cover border border-white/5"
+                    sizeType="thumbnail"
+                    containerClassName="w-10 h-10 rounded-lg shrink-0 overflow-hidden border border-white/5"
+                    className="w-full h-full object-cover"
                   />
                   <div className="flex-1 min-w-0">
                     <p className="text-[9.5px] font-black text-white uppercase truncate italic">Burger Truffe & Cheddar Coulant</p>
@@ -351,6 +382,299 @@ export const Home: React.FC<HomeProps> = ({
           )}
         </section>
       )}
+
+      {/* 2. PRESENTATION VIDEO & HOW IT WORKS (ONBOARDING FOR NEW VISITORS) */}
+      <section className="py-16 px-6 sm:px-12 md:px-24 bg-[#09090b] border-t border-b border-white/5 space-y-12">
+        <div className="max-w-4xl mx-auto text-center space-y-4">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#FF5C00]/10 border border-[#FF5C00]/20 text-[#FF5C00] text-[10px] font-mono font-bold uppercase tracking-widest">
+            <span className="w-2 h-2 rounded-full bg-[#FF5C00] animate-ping" />
+            <span>PRÉSENTATION OFFICIELLE • COMMENT ÇA MARCHE ?</span>
+          </div>
+
+          <h2 className="text-3xl sm:text-4xl md:text-5xl font-black uppercase tracking-tight italic text-white leading-tight">
+            {designSettings?.homePresTitle || 'C\'est quoi FID FUD ? Découverte en vidéo'}
+          </h2>
+
+          <p className="text-xs sm:text-sm text-zinc-300 leading-relaxed font-sans max-w-2xl mx-auto">
+            {designSettings?.homePresSubtitle || 'FIDFUD est la 1ère marketplace française de live-shopping culinaire. Découvrez les coulisses des cuisines en direct, tchattez avec les chefs et commandez des repas d\'exception préparés sous vos yeux !'}
+          </p>
+        </div>
+
+        {/* Video Player + Timeline Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center max-w-6xl mx-auto">
+          {/* Video Player Column */}
+          <div className="lg:col-span-7 bg-zinc-950 rounded-3xl border border-white/10 p-2 sm:p-3 shadow-2xl relative group overflow-hidden">
+            <div className="relative aspect-video rounded-2xl overflow-hidden bg-black flex items-center justify-center">
+              <video
+                ref={presVideoRef}
+                src={(designSettings?.homePresentationVideoUrl && isDirectPlayableVideo(designSettings.homePresentationVideoUrl) ? getSafeVideoUrl(designSettings.homePresentationVideoUrl) : null) || STABLE_CULINARY_FALLBACK_VIDEOS[0]}
+                autoPlay
+                loop
+                muted={isPresVideoMuted}
+                playsInline
+                className="w-full h-full object-cover"
+                onPlay={() => setIsPlayingPresVideo(true)}
+                onPause={() => setIsPlayingPresVideo(false)}
+                onError={(e) => {
+                  console.warn('[Home Presentation Video] Load error, falling back to stable MP4');
+                  if (STABLE_CULINARY_FALLBACK_VIDEOS[0] && e.currentTarget.src !== STABLE_CULINARY_FALLBACK_VIDEOS[0]) {
+                    e.currentTarget.src = STABLE_CULINARY_FALLBACK_VIDEOS[0];
+                  }
+                }}
+              />
+
+              {/* Video Overlay Info Bar */}
+              <div className="absolute top-3 left-3 right-3 flex justify-between items-center z-20">
+                <div className="bg-black/70 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/10 flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                  <span className="text-[10px] font-black uppercase text-white tracking-wider">LIVE DEMO FID FUD</span>
+                </div>
+
+                <div className="bg-black/70 backdrop-blur-md px-2.5 py-1 rounded-xl border border-white/10 text-[9px] font-mono text-zinc-300">
+                  HD 1080p
+                </div>
+              </div>
+
+              {/* Center Play/Pause Floating Button */}
+              <button
+                onClick={() => {
+                  if (presVideoRef.current) {
+                    if (isPlayingPresVideo) {
+                      presVideoRef.current.pause();
+                    } else {
+                      presVideoRef.current.play();
+                    }
+                  }
+                }}
+                className="absolute inset-0 m-auto w-14 h-14 rounded-full bg-[#FF5C00] text-white flex items-center justify-center shadow-2xl hover:scale-110 transition-transform cursor-pointer z-30"
+              >
+                {isPlayingPresVideo ? <Pause size={22} className="fill-current" /> : <Play size={22} className="fill-current ml-1" />}
+              </button>
+
+              {/* Bottom Video Controls */}
+              <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between z-20 bg-black/60 backdrop-blur-md px-3 py-2 rounded-xl border border-white/10">
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      if (presVideoRef.current) {
+                        if (isPlayingPresVideo) {
+                          presVideoRef.current.pause();
+                        } else {
+                          presVideoRef.current.play();
+                        }
+                      }
+                    }}
+                    className="text-white hover:text-[#FF5C00] transition-colors cursor-pointer"
+                  >
+                    {isPlayingPresVideo ? <Pause size={16} /> : <Play size={16} />}
+                  </button>
+                  <span className="text-[10px] text-zinc-300 font-mono">Vidéo de Présentation</span>
+                </div>
+
+                <button
+                  onClick={() => setIsPresVideoMuted(!isPresVideoMuted)}
+                  className="text-white hover:text-[#FF5C00] transition-colors p-1.5 rounded-lg bg-white/10 hover:bg-white/20 cursor-pointer flex items-center gap-1.5 text-[10px] font-bold"
+                >
+                  {isPresVideoMuted ? (
+                    <>
+                      <VolumeX size={14} />
+                      <span>Activer le Son</span>
+                    </>
+                  ) : (
+                    <>
+                      <Volume2 size={14} className="text-[#FF5C00]" />
+                      <span>Son Actif</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Timeline / 3 Steps Column */}
+          <div className="lg:col-span-5 space-y-4">
+            <h3 className="text-xl font-black uppercase tracking-tight text-white italic">
+              Comment ça se passe en 3 étapes ?
+            </h3>
+
+            <div className="space-y-3">
+              {/* Step 1 */}
+              <div className="p-4 rounded-2xl bg-[#0F0F11] border border-white/5 space-y-1 hover:border-white/15 transition-colors">
+                <div className="flex items-center gap-2">
+                  <span className="w-6 h-6 rounded-lg bg-[#FF5C00] text-white font-mono font-black text-xs flex items-center justify-center shrink-0">1</span>
+                  <h4 className="text-xs font-black text-white uppercase tracking-wider">Explorez les Lives & Vidéos</h4>
+                </div>
+                <p className="text-[11px] text-zinc-400 font-sans leading-relaxed pl-8">
+                  Naviguez parmi les cuisines en direct de votre ville. Visionnez les recettes en préparation, la qualité des ingrédients et l'hygiène de la cuisine.
+                </p>
+              </div>
+
+              {/* Step 2 */}
+              <div className="p-4 rounded-2xl bg-[#0F0F11] border border-white/5 space-y-1 hover:border-white/15 transition-colors">
+                <div className="flex items-center gap-2">
+                  <span className="w-6 h-6 rounded-lg bg-[#FF5C00] text-white font-mono font-black text-xs flex items-center justify-center shrink-0">2</span>
+                  <h4 className="text-xs font-black text-white uppercase tracking-wider">Échangez & Profitez des Ventes Flash</h4>
+                </div>
+                <p className="text-[11px] text-zinc-400 font-sans leading-relaxed pl-8">
+                  Posez vos questions au chef dans le tchat en temps réel, demandez une cuisson sur mesure et débloquez des promotions exclusives au live.
+                </p>
+              </div>
+
+              {/* Step 3 */}
+              <div className="p-4 rounded-2xl bg-[#0F0F11] border border-white/5 space-y-1 hover:border-white/15 transition-colors">
+                <div className="flex items-center gap-2">
+                  <span className="w-6 h-6 rounded-lg bg-[#FF5C00] text-white font-mono font-black text-xs flex items-center justify-center shrink-0">3</span>
+                  <h4 className="text-xs font-black text-white uppercase tracking-wider">Commandez & Faites-vous Livrer Chaud</h4>
+                </div>
+                <p className="text-[11px] text-zinc-400 font-sans leading-relaxed pl-8">
+                  Validez votre panier en 1 clic. Votre plat est préparé immédiatement après votre commande et livré par nos éco-coursiers ou à retirer en Click & Collect.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* PROFILE CARDS WITH LOGIN & SIGNUP BUTTONS */}
+        <div className="max-w-6xl mx-auto pt-6 space-y-6">
+          <div className="text-center space-y-2">
+            <span className="text-[10px] font-mono font-bold text-[#FF5C00] uppercase tracking-widest">REJOIGNEZ LA COMMUNAUTÉ</span>
+            <h3 className="text-2xl sm:text-3xl font-black uppercase tracking-tight italic text-white">
+              Prêt à commencer ? Choisissez votre profil
+            </h3>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {/* Gourmands Card */}
+            <div className="p-6 rounded-3xl bg-[#0F0F11] border border-white/10 flex flex-col justify-between space-y-6 hover:border-[#FF5C00]/40 transition-all group">
+              <div className="space-y-4">
+                <div className="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center text-2xl">
+                  👩‍🍳
+                </div>
+                <div>
+                  <h4 className="text-base font-black uppercase text-white italic">Pour les Gourmands</h4>
+                  <p className="text-xs text-zinc-400 font-sans mt-1 leading-relaxed">
+                    Accès 100% gratuit. Regardez les lives culinaires, profitez de -50% sur votre 1ère commande et cumulez des points de fidélité à chaque achat.
+                  </p>
+                </div>
+                <ul className="space-y-2 text-[11px] text-zinc-300 font-sans">
+                  <li className="flex items-center gap-2">
+                    <span className="text-emerald-400">✓</span> Inscription en 30 secondes
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <span className="text-emerald-400">✓</span> Chat direct avec les chefs
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <span className="text-emerald-400">✓</span> Suivi de livraison GPS
+                  </li>
+                </ul>
+              </div>
+
+              <div className="space-y-2 pt-2">
+                <button
+                  onClick={() => onOpenAuth('signup')}
+                  className="w-full bg-[#FF5C00] hover:bg-[#FF3E00] text-white py-3 rounded-xl font-black text-xs uppercase tracking-widest shadow-lg transition-transform active:scale-95 cursor-pointer flex items-center justify-center gap-2"
+                >
+                  <UserPlus size={14} />
+                  S'inscrire comme Gourmand
+                </button>
+                <button
+                  onClick={() => onOpenAuth('login')}
+                  className="w-full bg-zinc-900 hover:bg-zinc-800 border border-white/10 text-white py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-colors cursor-pointer flex items-center justify-center gap-2"
+                >
+                  <LogIn size={14} />
+                  Se Connecter
+                </button>
+              </div>
+            </div>
+
+            {/* Restaurateurs Card */}
+            <div className="p-6 rounded-3xl bg-[#0F0F11] border border-white/10 flex flex-col justify-between space-y-6 hover:border-[#FF5C00]/40 transition-all group">
+              <div className="space-y-4">
+                <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center text-2xl">
+                  💼
+                </div>
+                <div>
+                  <h4 className="text-base font-black uppercase text-white italic">Pour les Restaurateurs</h4>
+                  <p className="text-xs text-zinc-400 font-sans mt-1 leading-relaxed">
+                    Digitalisez votre établissement, diffusez vos préparations en live, augmentez votre chiffre d'affaires et encaissez directement via Stripe Connect.
+                  </p>
+                </div>
+                <ul className="space-y-2 text-[11px] text-zinc-300 font-sans">
+                  <li className="flex items-center gap-2">
+                    <span className="text-emerald-400">✓</span> Outil de streaming pro inclus
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <span className="text-emerald-400">✓</span> Payouts Stripe sécurisés
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <span className="text-emerald-400">✓</span> +35% de commandes en direct
+                  </li>
+                </ul>
+              </div>
+
+              <div className="space-y-2 pt-2">
+                <button
+                  onClick={() => setShowBecomeSellerModal(true)}
+                  className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-3 rounded-xl font-black text-xs uppercase tracking-widest shadow-lg transition-transform active:scale-95 cursor-pointer flex items-center justify-center gap-2"
+                >
+                  <ChefHat size={14} />
+                  Devenir Vendeur Partner
+                </button>
+                <button
+                  onClick={() => onOpenAuth('login')}
+                  className="w-full bg-zinc-900 hover:bg-zinc-800 border border-white/10 text-white py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-colors cursor-pointer flex items-center justify-center gap-2"
+                >
+                  <LogIn size={14} />
+                  Espace Restaurateur
+                </button>
+              </div>
+            </div>
+
+            {/* Livreurs / Coursiers Card */}
+            <div className="p-6 rounded-3xl bg-[#0F0F11] border border-white/10 flex flex-col justify-between space-y-6 hover:border-[#FF5C00]/40 transition-all group">
+              <div className="space-y-4">
+                <div className="w-12 h-12 rounded-2xl bg-blue-500/10 border border-blue-500/20 text-blue-400 flex items-center justify-center text-2xl">
+                  🚴
+                </div>
+                <div>
+                  <h4 className="text-base font-black uppercase text-white italic">Pour les Livreurs</h4>
+                  <p className="text-xs text-zinc-400 font-sans mt-1 leading-relaxed">
+                    Rejoignez la flotte éco-responsable locale. Effectuez des livraisons de proximité à vélo ou scooter avec des revenus flexibles et 100% de pourboires.
+                  </p>
+                </div>
+                <ul className="space-y-2 text-[11px] text-zinc-300 font-sans">
+                  <li className="flex items-center gap-2">
+                    <span className="text-emerald-400">✓</span> Horaires 100% libres
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <span className="text-emerald-400">✓</span> Pourboires intégralement conservés
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <span className="text-emerald-400">✓</span> Support logistique 7j/7
+                  </li>
+                </ul>
+              </div>
+
+              <div className="space-y-2 pt-2">
+                <button
+                  onClick={() => setShowBecomeSellerModal(true)}
+                  className="w-full bg-blue-600 hover:bg-blue-500 text-white py-3 rounded-xl font-black text-xs uppercase tracking-widest shadow-lg transition-transform active:scale-95 cursor-pointer flex items-center justify-center gap-2"
+                >
+                  <Truck size={14} />
+                  Postuler comme Livreur
+                </button>
+                <button
+                  onClick={() => onOpenAuth('login')}
+                  className="w-full bg-zinc-900 hover:bg-zinc-800 border border-white/10 text-white py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-colors cursor-pointer flex items-center justify-center gap-2"
+                >
+                  <LogIn size={14} />
+                  Espace Livreur
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
 
       {/* 3. TRUST & FEATURES */}
       {designSettings?.homeShowTrust !== false && (
@@ -463,9 +787,11 @@ export const Home: React.FC<HomeProps> = ({
             </div>
 
             <div className="rounded-3xl overflow-hidden border border-white/5 shadow-2xl relative aspect-video bg-zinc-950">
-              <img 
+              <LazyImage 
                 src="https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=600&auto=format&fit=crop&q=80" 
                 alt="Delicious Food Grid" 
+                sizeType="card"
+                containerClassName="w-full h-full"
                 className="w-full h-full object-cover opacity-80"
               />
               <div className="absolute inset-0 bg-gradient-to-t from-black via-black/20 to-transparent flex items-end p-6">
@@ -482,9 +808,11 @@ export const Home: React.FC<HomeProps> = ({
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
             <div className="rounded-3xl overflow-hidden border border-white/5 shadow-2xl relative aspect-video bg-zinc-950 order-last lg:order-first">
-              <img 
+              <LazyImage 
                 src="https://images.unsplash.com/photo-1556910103-1c02745aae4d?w=600&auto=format&fit=crop&q=80" 
                 alt="Chef Cooking" 
+                sizeType="card"
+                containerClassName="w-full h-full"
                 className="w-full h-full object-cover opacity-80"
               />
               <div className="absolute inset-0 bg-gradient-to-t from-black via-black/20 to-transparent flex items-end p-6">
@@ -559,7 +887,13 @@ export const Home: React.FC<HomeProps> = ({
               className="p-3 bg-[#0F0F11] border border-white/5 rounded-2xl hover:border-white/10 hover:scale-[1.02] transition-all cursor-pointer group"
             >
               <div className="aspect-square rounded-xl overflow-hidden border border-white/5 mb-3 relative">
-                <img src={cat.img} alt={cat.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                <LazyImage 
+                  src={cat.img} 
+                  alt={cat.title} 
+                  sizeType="thumbnail"
+                  containerClassName="w-full h-full"
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" 
+                />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
                 <span className="absolute bottom-2 left-2 bg-[#FF5C00] text-white font-mono text-[8px] font-bold px-1.5 py-0.5 rounded uppercase">
                   {cat.count}
@@ -693,74 +1027,14 @@ export const Home: React.FC<HomeProps> = ({
         </div>
       </footer>
 
-      {/* 8. BECOME A SELLER MODAL */}
-      {showBecomeSellerModal && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/90 backdrop-blur-sm">
-          <div className="w-full max-w-md bg-[#0F0F11] border border-[#FF5C00]/20 rounded-3xl p-6 sm:p-8 shadow-2xl relative space-y-6">
-            <button 
-              onClick={() => setShowBecomeSellerModal(false)}
-              className="absolute top-4 right-4 text-zinc-500 hover:text-white transition-colors p-1"
-            >
-              <X size={18} />
-            </button>
-
-            <div className="text-center space-y-2">
-              <span className="text-3xl">👨‍🍳</span>
-              <h3 className="text-xl font-black uppercase italic tracking-tight text-white">
-                Rejoignez la brigade FIDFUD !
-              </h3>
-              <p className="text-xs text-zinc-400 font-sans leading-relaxed">
-                Remplissez vos informations pour lancer votre chaîne de live cooking et vendre vos créations culinaires en direct !
-              </p>
-            </div>
-
-            <form onSubmit={handleBecomeSellerSubmit} className="space-y-4">
-              <div className="space-y-1.5">
-                <label className="text-[9px] font-black uppercase tracking-widest text-zinc-500 font-sans block">Nom de votre établissement / Chef</label>
-                <input 
-                  type="text" 
-                  required
-                  placeholder="Ex: Le Camion Gourmet, Chef Robert"
-                  value={sellerName}
-                  onChange={e => setSellerName(e.target.value)}
-                  className="w-full bg-zinc-950 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-[#FF5C00] font-sans"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-[9px] font-black uppercase tracking-widest text-zinc-500 font-sans block">Adresse email de contact</label>
-                <input 
-                  type="email" 
-                  required
-                  placeholder="Ex: contact@monrestau.com"
-                  value={sellerEmail}
-                  onChange={e => setSellerEmail(e.target.value)}
-                  className="w-full bg-zinc-950 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-[#FF5C00] font-sans"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-[9px] font-black uppercase tracking-widest text-zinc-500 font-sans block">Spécialité culinaire</label>
-                <input 
-                  type="text" 
-                  placeholder="Ex: Smash burgers, Pizzas napolitaines, Ramen..."
-                  value={sellerSpecialty}
-                  onChange={e => setSellerSpecialty(e.target.value)}
-                  className="w-full bg-zinc-950 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-[#FF5C00] font-sans"
-                />
-              </div>
-
-              <button 
-                type="submit"
-                disabled={sellerSubmitted}
-                className="w-full bg-[#FF5C00] hover:bg-[#FF3E00] text-white font-black text-xs uppercase tracking-widest py-3 rounded-xl transition-all shadow-lg shadow-[#FF5C00]/20 flex items-center justify-center gap-2 cursor-pointer"
-              >
-                {sellerSubmitted ? 'Envoi en cours... ⏳' : 'Soumettre ma candidature'}
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
+      {/* 8. BECOME A SELLER / PARTNER MODAL */}
+      <BecomePartnerModal 
+        isOpen={showBecomeSellerModal} 
+        onClose={() => setShowBecomeSellerModal(false)} 
+        onOpenAuth={onOpenAuth}
+        accentColor={accentColor}
+        designSettings={designSettings}
+      />
 
       {/* 9. COOKIE CONSENT BANNER */}
       {showCookieBanner && (

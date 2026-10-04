@@ -1,0 +1,23 @@
+{
+  "short_name": "Fidfud",
+  "name": "Fidfud - Vidéos Culinaires & Livraisons Express",
+  "description": "Commandez les meilleurs plats en direct des vidéos de vos chefs et restaurants préférés.",
+  "icons": [
+    {
+      "src": "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=192&q=80",
+      "type": "image/jpeg",
+      "sizes": "192x192"
+    },
+    {
+      "src": "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=512&q=80",
+      "type": "image/jpeg",
+      "sizes": "512x512"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#121212",
+  "theme_color": "#FF5C00",
+  "display": "standalone",
+  "orientation": "portrait",
+  "scope": "/"
+}

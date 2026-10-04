@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { getSafeVideoUrl, STABLE_CULINARY_FALLBACK_VIDEOS } from '../utils/videoUtils';
 import { motion, AnimatePresence } from 'motion/react';
 import { Camera, Video, Square, RefreshCw, Volume2, Sparkles, Download, Check, AlertCircle } from 'lucide-react';
 
@@ -280,12 +281,16 @@ export const VideoRecorderStudio: React.FC<VideoRecorderStudioProps> = ({
               <div className="w-full h-full relative">
                 <video
                   ref={capturedVideoRef}
-                  src={videoUrl}
+                  src={getSafeVideoUrl(videoUrl)}
                   playsInline
                   autoPlay
                   loop
                   onPlay={() => setIsPlayingCaptured(true)}
                   onPause={() => setIsPlayingCaptured(false)}
+                  onError={(e) => {
+                    console.warn('[VideoRecorderStudio] Recorded video load error, falling back');
+                    e.currentTarget.src = STABLE_CULINARY_FALLBACK_VIDEOS[0];
+                  }}
                   onTimeUpdate={(e) => {
                     setPreviewTime(e.currentTarget.currentTime);
                     setPreviewDuration(e.currentTarget.duration || 1);

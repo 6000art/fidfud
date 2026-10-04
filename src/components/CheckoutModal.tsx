@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { X, CreditCard, ShoppingBag, Truck, MapPin, CheckCircle2, DollarSign, ExternalLink, ShieldCheck } from 'lucide-react';
+import { X, CreditCard, ShoppingBag, Truck, MapPin, CheckCircle2, DollarSign, ExternalLink, ShieldCheck, Award, Sparkles, Gift } from 'lucide-react';
 import { CartItem, DeliveryType, Order, StripeSplitResult } from '../types';
+import { notify } from '../utils/notify';
 
 interface CheckoutModalProps {
   isOpen: boolean;
@@ -8,7 +9,9 @@ interface CheckoutModalProps {
   cartItems: CartItem[];
   onOrderCompleted: (order: Order) => void;
   onClearCart: () => void;
-  user: { id: string; email: string; role: 'client' | 'restaurant' | 'admin' } | null;
+  user: { id: string; email: string; role: 'client' | 'restaurant' | 'admin' | 'courier' } | null;
+  onOpenProfile?: () => void;
+  onOpenOrdersHistory?: () => void;
 }
 
 export default function CheckoutModal({
@@ -17,18 +20,23 @@ export default function CheckoutModal({
   cartItems,
   onOrderCompleted,
   onClearCart,
-  user
+  user,
+  onOpenProfile,
+  onOpenOrdersHistory
 }: CheckoutModalProps) {
   const [deliveryType, setDeliveryType] = useState<DeliveryType>('click_and_collect');
   const [cardNumber, setCardNumber] = useState<string>('4242 •••• •••• 4242');
   const [expiry, setExpiry] = useState<string>('12/28');
   const [cvc, setCvc] = useState<string>('123');
   const [clientEmail, setClientEmail] = useState<string>(user?.email || 'foodie@fidfud.app');
+  const [deliveryAddress, setDeliveryAddress] = useState<string>('12 Rue de la Roquette, 75011 Paris');
   
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [successData, setSuccessData] = useState<{
     order: Order;
     payoutBreakdown: StripeSplitResult;
+    pointsEarned?: number;
+    newPointsBalance?: number;
   } | null>(null);
 
   const [promoCode, setPromoCode] = useState<string>('');
@@ -68,26 +76,30 @@ export default function CheckoutModal({
         );
         if (found) {
           setAppliedPromo(found.code);
+          let msg = 'Code promo appliqué avec succès !';
           if (found.rewardId.includes('10-percent')) {
             const disc = Number((subtotal * 0.1).toFixed(2));
             setPromoDiscount(disc);
             setIsFreeDelivery(false);
-            setPromoSuccessMsg(`Fidélité -10% appliquée (-${disc.toFixed(2)} €) !`);
+            msg = `Fidélité -10% appliquée (-${disc.toFixed(2)} €) !`;
           } else if (found.rewardId.includes('free-delivery')) {
             setPromoDiscount(0.99);
             setIsFreeDelivery(true);
-            setPromoSuccessMsg('Livraison / Frais de service Fidfud offerts (Économie de 0.99 €) !');
+            msg = 'Livraison / Frais de service Fidfud offerts (Économie de 0.99 €) !';
           } else if (found.rewardId.includes('free-dessert')) {
             setPromoDiscount(0);
             setIsFreeDelivery(false);
-            setPromoSuccessMsg('Cadeau Fidélité : Dessert offert validé ! 🍰');
+            msg = 'Cadeau Fidélité : Dessert offert validé ! 🍰';
           } else if (found.rewardId.includes('free-drink')) {
             setPromoDiscount(0);
             setIsFreeDelivery(false);
-            setPromoSuccessMsg('Cadeau Fidélité : Boisson offerte validée ! 🥤');
+            msg = 'Cadeau Fidélité : Boisson offerte validée ! 🥤';
           }
+          setPromoSuccessMsg(msg);
+          notify("🎟️ CODE PROMO APPLIQUÉ", msg, "success");
         } else {
           setPromoError('Code promo invalide, expiré ou déjà utilisé.');
+          notify("⚠️ CODE INVALID", 'Code promo invalide, expiré ou déjà utilisé.', "warn");
         }
       } else {
         setPromoError('Impossible de vérifier le code promo.');
@@ -130,6 +142,8 @@ export default function CheckoutModal({
       setSuccessData(result);
       onOrderCompleted(result.order);
       onClearCart();
+      const shortId = result.order.id ? result.order.id.substring(result.order.id.length - 4).toUpperCase() : '001';
+      notify("🚀 COMMANDE CONFIRMÉE !", `Commande #${shortId} envoyée en cuisine chez ${restaurantName} !`, "success");
     } catch (err) {
       console.error(err);
       alert("Erreur de paiement : Impossible de joindre le serveur de paye Fidfud.");
@@ -139,7 +153,7 @@ export default function CheckoutModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-md overflow-y-auto">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md overflow-y-auto">
       {/* Container Card */}
       <div className="relative w-full max-w-lg bg-[#0D0D0E]/95 backdrop-blur-md border border-white/5 rounded-[32px] overflow-hidden shadow-2xl my-8">
         
@@ -195,6 +209,68 @@ export default function CheckoutModal({
               </div>
             </div>
 
+            {/* Earned Points Summary Card */}
+            {(() => {
+              const pointsEarned = successData.pointsEarned ?? successData.order.pointsEarned ?? Math.round(successData.order.totalAmount * 10);
+              return (
+                <div className="p-5 rounded-2xl bg-gradient-to-br from-amber-500/15 via-[#FF5C00]/10 to-orange-500/5 border border-amber-500/30 text-left space-y-3 relative overflow-hidden shadow-lg">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-amber-500 to-[#FF5C00] flex items-center justify-center text-white shadow-md">
+                        <Award size={20} />
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-black uppercase tracking-wider text-amber-300 font-mono flex items-center gap-1.5">
+                          <span>Points Fidélité Gagnés</span>
+                          <Sparkles size={13} className="text-amber-400" />
+                        </h4>
+                        <p className="text-[10px] text-zinc-400 font-sans">Programme Récompenses & Fidélité FIDFUD</p>
+                      </div>
+                    </div>
+                    <div className="px-3 py-1.5 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-300 font-black text-sm font-mono tracking-wider animate-pulse flex items-center gap-1 shadow-sm">
+                      <span>+{pointsEarned} PTS</span>
+                    </div>
+                  </div>
+
+                  <div className="bg-black/40 rounded-xl p-3 border border-white/5 space-y-1.5 text-xs">
+                    <div className="flex justify-between items-center">
+                      <span className="text-zinc-400">Total de votre commande :</span>
+                      <span className="text-white font-bold font-mono">{successData.order.totalAmount.toFixed(2)} €</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-zinc-400">Règle de conversion :</span>
+                      <span className="text-amber-400 font-mono font-semibold">1 € dépensé = 10 points fidélité</span>
+                    </div>
+                    {successData.newPointsBalance !== undefined && (
+                      <div className="flex justify-between items-center pt-2 border-t border-white/10">
+                        <span className="text-zinc-300 font-semibold">Nouveau solde fidélité :</span>
+                        <span className="text-[#FF5C00] font-black font-mono text-sm">{successData.newPointsBalance} PTS</span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex items-center justify-between text-[11px] text-zinc-400 font-sans pt-0.5">
+                    <span className="flex items-center gap-1.5 text-zinc-300">
+                      <Gift size={13} className="text-amber-400 shrink-0" />
+                      <span>Convertibles en réductions -10% et desserts offerts</span>
+                    </span>
+                    {onOpenProfile && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onClose();
+                          onOpenProfile();
+                        }}
+                        className="text-[11px] font-bold text-[#FF5C00] hover:text-amber-400 underline underline-offset-2 transition-colors cursor-pointer shrink-0 ml-2"
+                      >
+                        Voir mon solde →
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
+
             {/* Technical Detail: Stripe Split Payout breakdown */}
             <div className="p-5 rounded-2xl bg-[#09090A] border border-zinc-900 text-left space-y-4">
               <div className="flex items-center space-x-2 border-b border-zinc-900 pb-2.5">
@@ -237,13 +313,34 @@ export default function CheckoutModal({
               </div>
             </div>
 
-            <button
-              id="btn-success-close"
-              onClick={onClose}
-              className="w-full bg-zinc-900 hover:bg-zinc-800 text-white font-bold py-3 rounded-xl transition-all border border-zinc-800"
-            >
-              Fermer & Retourner au Feed
-            </button>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+              {onOpenProfile && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    onOpenProfile();
+                  }}
+                  className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-amber-500/20 to-orange-500/20 border border-amber-500/40 hover:border-amber-400 text-amber-300 font-black text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 cursor-pointer shadow-md"
+                >
+                  <Award size={15} />
+                  <span>Mon Espace Fidélité</span>
+                </button>
+              )}
+              <button
+                id="btn-success-close"
+                type="button"
+                onClick={() => {
+                  onClose();
+                  if (onOpenOrdersHistory) {
+                    onOpenOrdersHistory();
+                  }
+                }}
+                className={`w-full bg-zinc-900 hover:bg-zinc-800 text-white font-bold py-3 px-4 rounded-xl transition-all border border-zinc-800 text-xs uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer ${!onOpenProfile ? 'sm:col-span-2' : ''}`}
+              >
+                <span>Suivre ma commande</span>
+              </button>
+            </div>
           </div>
         ) : (
           /* Checkout Payment Form */
@@ -298,15 +395,54 @@ export default function CheckoutModal({
             </div>
 
             {/* Customer Details info */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-zinc-400 uppercase tracking-wider">Adresse e-mail client</label>
-              <input 
-                type="email" 
-                value={clientEmail}
-                onChange={e => setClientEmail(e.target.value)}
-                required
-                className="w-full px-4 py-3 bg-[#121214] border border-[#1F1F23] rounded-xl text-sm text-white focus:outline-none focus:border-[#FF5E1A]"
-              />
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-zinc-400 uppercase tracking-wider">Adresse e-mail client</label>
+                <input 
+                  type="email" 
+                  value={clientEmail}
+                  onChange={e => setClientEmail(e.target.value)}
+                  required
+                  className="w-full px-4 py-3 bg-[#121214] border border-[#1F1F23] rounded-xl text-sm text-white focus:outline-none focus:border-[#FF5E1A]"
+                />
+              </div>
+
+              {/* Delivery Address input for Livraison Maison */}
+              {deliveryType === 'restaurant_delivery' && (
+                <div className="space-y-1.5 animate-fadeIn">
+                  <div className="flex justify-between items-center">
+                    <label className="text-xs font-bold text-zinc-400 uppercase tracking-wider flex items-center gap-1.5">
+                      <MapPin size={14} className="text-[#FF5E1A]" />
+                      <span>Adresse de Livraison Maison</span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (navigator.geolocation) {
+                          navigator.geolocation.getCurrentPosition((pos) => {
+                            setDeliveryAddress(`${pos.coords.latitude.toFixed(4)}, ${pos.coords.longitude.toFixed(4)} (Paris 11e Voltaire)`);
+                          }, () => {
+                            setDeliveryAddress('12 Rue de la Roquette, 75011 Paris');
+                          });
+                        } else {
+                          setDeliveryAddress('12 Rue de la Roquette, 75011 Paris');
+                        }
+                      }}
+                      className="text-[10px] text-[#FF5E1A] hover:underline font-bold font-mono"
+                    >
+                      📍 Position GPS
+                    </button>
+                  </div>
+                  <input 
+                    type="text" 
+                    value={deliveryAddress}
+                    onChange={e => setDeliveryAddress(e.target.value)}
+                    placeholder="12 Rue de la Roquette, 75011 Paris"
+                    required={deliveryType === 'restaurant_delivery'}
+                    className="w-full px-4 py-3 bg-[#121214] border border-[#1F1F23] rounded-xl text-sm text-white focus:outline-none focus:border-[#FF5E1A]"
+                  />
+                </div>
+              )}
             </div>
 
             {/* Payment Details Stripe Card Form */}

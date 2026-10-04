@@ -11,14 +11,22 @@ import {
   Coins, 
   Award, 
   Gift, 
-  Check 
+  Check,
+  RotateCcw,
+  AlertTriangle,
+  AlertOctagon,
+  XCircle,
+  Flame,
+  ChefHat,
+  Timer,
+  Package
 } from 'lucide-react';
 import { APIProvider, Map, AdvancedMarker, useMap } from '@vis.gl/react-google-maps';
-import { Order, Restaurant } from '../types';
+import { Order, Restaurant, Dish } from '../types';
 
 const API_KEY =
-  process.env.GOOGLE_MAPS_PLATFORM_KEY ||
   (import.meta as any).env?.VITE_GOOGLE_MAPS_PLATFORM_KEY ||
+  (typeof process !== 'undefined' ? (process.env?.GOOGLE_MAPS_PLATFORM_KEY || '') : '') ||
   (globalThis as any).GOOGLE_MAPS_PLATFORM_KEY ||
   '';
 const hasValidKey = Boolean(API_KEY) && API_KEY !== 'YOUR_API_KEY';
@@ -30,7 +38,222 @@ interface OrdersHistoryProps {
   user?: any;
   restaurants: Restaurant[];
   userLocation?: { lat: number; lng: number } | null;
+  dishes?: Dish[];
+  onAddToCart?: (dish: Dish, quantity: number) => void;
+  onOpenCart?: () => void;
+  onOrderUpdated?: (updatedOrder: Order) => void;
 }
+
+const CANCEL_REASONS = [
+  { id: 'too_long', label: "⏱️ Temps d'attente estimé trop long" },
+  { id: 'wrong_items', label: "🛒 Erreur dans les plats commandés" },
+  { id: 'wrong_address', label: "📍 Erreur d'adresse de livraison" },
+  { id: 'schedule_change', label: "📅 Changement d'emploi du temps" },
+  { id: 'other', label: "💬 Autre motif" }
+];
+
+interface CancelOrderModalProps {
+  order: Order | null;
+  isOpen: boolean;
+  onClose: () => void;
+  onConfirmCancel: (orderId: string, reason: string) => Promise<void>;
+}
+
+const CancelOrderModal: React.FC<CancelOrderModalProps> = ({
+  order,
+  isOpen,
+  onClose,
+  onConfirmCancel
+}) => {
+  if (!isOpen || !order) return null;
+
+  const [selectedReasonId, setSelectedReasonId] = useState<string>('too_long');
+  const [customNotes, setCustomNotes] = useState<string>('');
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+
+  // Calculate elapsed time in minutes
+  const createdMs = new Date(order.createdAt).getTime();
+  const minutesElapsed = Math.max(0, Math.floor((Date.now() - createdMs) / (1000 * 60)));
+
+  const isPending = order.status === 'pending';
+  const isPreparing = order.status === 'preparing';
+  const isReadyOrEnRoute = order.status === 'ready' || order.status === 'delivered' || order.courierStatus === 'en_route';
+
+  // Condition 1: pending OR <= 5 minutes ago => 100% full refund
+  // Condition 2: preparing AND > 5 minutes ago => 50% partial refund
+  // Condition 3: ready / en_route => Cannot cancel
+  const isEligibleFullRefund = isPending || (isPreparing && minutesElapsed <= 5);
+  const isEligiblePartialRefund = isPreparing && minutesElapsed > 5;
+  const isBlocked = isReadyOrEnRoute;
+
+  const refundPercentage = isEligibleFullRefund ? 100 : isEligiblePartialRefund ? 50 : 0;
+  const refundAmount = (order.totalAmount * refundPercentage) / 100;
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isBlocked || isSubmitting) return;
+
+    setIsSubmitting(true);
+    const preset = CANCEL_REASONS.find(r => r.id === selectedReasonId)?.label || 'Autre motif';
+    const finalReason = customNotes.trim() ? `${preset} - ${customNotes.trim()}` : preset;
+
+    await onConfirmCancel(order.id, finalReason);
+    setIsSubmitting(false);
+  };
+
+  return (
+    <div 
+      onClick={onClose}
+      className="fixed inset-0 z-[120] flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md animate-fadeIn"
+    >
+      <div 
+        onClick={(e) => e.stopPropagation()}
+        className="relative w-full max-w-md max-h-[90vh] overflow-y-auto custom-scrollbar bg-[#0D0D0E] border border-white/10 rounded-3xl p-5 sm:p-6 shadow-2xl space-y-4 text-left my-auto"
+      >
+        
+        {/* Header */}
+        <div className="flex justify-between items-start sticky top-0 bg-[#0D0D0E]/95 backdrop-blur-md pt-1 pb-3 z-10 border-b border-white/5">
+          <div className="flex items-center space-x-3">
+            <div className="w-10 h-10 rounded-2xl bg-red-500/10 text-red-500 border border-red-500/20 flex items-center justify-center font-black shrink-0">
+              <AlertTriangle size={20} />
+            </div>
+            <div>
+              <h3 className="text-sm font-black text-white uppercase italic tracking-wide">Annulation de Commande</h3>
+              <p className="text-[10px] text-zinc-400 font-mono">ID: #{order.id.slice(-6).toUpperCase()} • {order.restaurantName}</p>
+            </div>
+          </div>
+          <button 
+            type="button"
+            onClick={onClose} 
+            className="p-2 rounded-full bg-zinc-900 text-zinc-400 hover:text-white border border-white/10 cursor-pointer transition-colors shrink-0"
+            title="Fermer la fenêtre"
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        {/* Condition Box */}
+        <div className={`p-3.5 sm:p-4 rounded-2xl border space-y-2.5 ${
+          isEligibleFullRefund 
+            ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300' 
+            : isEligiblePartialRefund 
+            ? 'bg-amber-500/10 border-amber-500/30 text-amber-300' 
+            : 'bg-red-500/10 border-red-500/30 text-red-300'
+        }`}>
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <span className="text-[10px] font-black uppercase tracking-wider font-mono flex items-center gap-1.5">
+              <ShieldCheck size={14} />
+              Condition d'Annulation
+            </span>
+            <span className="text-[9.5px] font-mono font-bold px-2.5 py-0.5 rounded-full bg-black/50 border border-white/10 uppercase">
+              {isEligibleFullRefund ? '🟢 Remboursement 100%' : isEligiblePartialRefund ? '🟠 Remboursement 50%' : '🔴 Non Annulable'}
+            </span>
+          </div>
+
+          <p className="text-[11px] leading-relaxed font-sans text-zinc-200">
+            {isEligibleFullRefund && (
+              <>
+                <strong>Gratuit & Remboursement Intégral (100%) :</strong> Votre commande est récente ({minutesElapsed} min écoulée{minutesElapsed > 1 ? 's' : ''}). L'annulation est totalement gratuite et un remboursement de <strong>{refundAmount.toFixed(2)} €</strong> sera re-crédité sur votre moyen de paiement.
+              </>
+            )}
+            {isEligiblePartialRefund && (
+              <>
+                <strong>Préparation en Cuisine Débutée (50%) :</strong> La commande a été passée il y a {minutesElapsed} minutes et les produits sont déjà en cours de préparation en cuisine. Un remboursement partiel de <strong>{refundAmount.toFixed(2)} € (50%)</strong> s'applique.
+              </>
+            )}
+            {isBlocked && (
+              <>
+                <strong>L'annulation directe est bloquée :</strong> La commande est déjà prête ou en cours de livraison par le coursier. Merci de contacter directement l'établissement ou le livreur.
+              </>
+            )}
+          </p>
+
+          <div className="pt-2 flex items-center justify-between text-[10px] text-zinc-400 border-t border-white/10 font-mono flex-wrap gap-1">
+            <span>Montant total: {order.totalAmount.toFixed(2)} €</span>
+            <span className="font-bold text-white">Remboursement: {refundAmount.toFixed(2)} €</span>
+          </div>
+        </div>
+
+        {/* Reason selector (if not blocked) */}
+        {!isBlocked && (
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-[10px] font-black uppercase text-zinc-400 tracking-wider font-mono block">
+                Motif d'annulation <span className="text-red-500">*</span>
+              </label>
+              <div className="space-y-1.5">
+                {CANCEL_REASONS.map(reason => (
+                  <button
+                    type="button"
+                    key={reason.id}
+                    onClick={() => setSelectedReasonId(reason.id)}
+                    className={`w-full p-2.5 rounded-xl border text-xs text-left transition-all flex items-center justify-between cursor-pointer ${
+                      selectedReasonId === reason.id
+                        ? 'bg-[#FF5C00]/15 border-[#FF5C00] text-white font-bold'
+                        : 'bg-zinc-900/60 border-white/5 text-zinc-300 hover:bg-zinc-800/80'
+                    }`}
+                  >
+                    <span className="truncate pr-2">{reason.label}</span>
+                    {selectedReasonId === reason.id && <Check size={14} className="text-[#FF5C00] shrink-0" />}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Custom details */}
+            <div className="space-y-1">
+              <label className="text-[9.5px] text-zinc-400 font-sans block">Commentaire ou précision (facultatif)</label>
+              <textarea
+                rows={2}
+                value={customNotes}
+                onChange={e => setCustomNotes(e.target.value)}
+                placeholder="Ex : Je dois m'absenter en urgence..."
+                className="w-full text-xs bg-zinc-900 border border-white/10 rounded-xl p-2.5 text-white placeholder-zinc-600 focus:outline-none focus:border-[#FF5C00] resize-none"
+              />
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex items-center gap-2 pt-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="flex-1 py-3 px-3 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-zinc-300 font-bold text-xs uppercase tracking-wider cursor-pointer transition-colors border border-white/5"
+              >
+                Garder la commande
+              </button>
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="flex-1 py-3 px-3 rounded-xl bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 text-white font-black text-xs uppercase tracking-wider cursor-pointer transition-all shadow-lg shadow-red-600/20 active:scale-95 flex items-center justify-center gap-1.5"
+              >
+                {isSubmitting ? (
+                  <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                ) : (
+                  <>
+                    <Check size={14} />
+                    <span>Valider ({refundAmount.toFixed(2)} €)</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </form>
+        )}
+
+        {isBlocked && (
+          <div className="pt-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="w-full py-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-white font-bold text-xs uppercase tracking-wider cursor-pointer transition-colors border border-white/10"
+            >
+              Fermer la fenêtre
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
 
 const REWARDS_CATALOG = [
   {
@@ -63,80 +286,260 @@ const REWARDS_CATALOG = [
   }
 ];
 
-const OrderStepTracker = ({ status, deliveryType }: { status: string; deliveryType: string }) => {
+interface PreparingCountdownTimerProps {
+  createdAt: string;
+  estimatedPrepMinutes?: number;
+  deliveryType?: string;
+}
+
+const PreparingCountdownTimer: React.FC<PreparingCountdownTimerProps> = ({
+  createdAt,
+  estimatedPrepMinutes = 15,
+  deliveryType
+}) => {
+  const [now, setNow] = useState<number>(Date.now());
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setNow(Date.now());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const createdMs = new Date(createdAt).getTime();
+  const totalPrepSeconds = Math.max(60, (estimatedPrepMinutes || 15) * 60);
+  const elapsedSeconds = Math.max(0, Math.floor((now - createdMs) / 1000));
+  const remainingSeconds = Math.max(0, totalPrepSeconds - elapsedSeconds);
+  const progressPercent = Math.min(100, Math.max(0, (elapsedSeconds / totalPrepSeconds) * 100));
+
+  const minutes = Math.floor(remainingSeconds / 60);
+  const seconds = remainingSeconds % 60;
+  const formattedTime = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+
+  // Stage description
+  let stageText = "Préparation des ingrédients & découpe";
+  let stageIcon = "🔪";
+  if (progressPercent >= 75) {
+    stageText = "Dressage & emballage isotherme";
+    stageIcon = "📦";
+  } else if (progressPercent >= 35) {
+    stageText = "Cuisson haute température par le chef";
+    stageIcon = "🍳";
+  }
+
+  if (remainingSeconds === 0) {
+    stageText = "Finition imminente ! Plat bientôt prêt !";
+    stageIcon = "✨";
+  }
+
+  return (
+    <div className="bg-gradient-to-br from-amber-950/40 via-zinc-950 to-orange-950/40 border border-[#FF5C00]/30 rounded-2xl p-3.5 space-y-3 relative overflow-hidden shadow-lg shadow-[#FF5C00]/10 animate-fadeIn">
+      {/* Background ambient glow */}
+      <div className="absolute top-0 right-0 w-28 h-28 bg-[#FF5C00]/10 rounded-full blur-2xl pointer-events-none" />
+
+      {/* Header with live status badge */}
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <div className="w-7 h-7 rounded-lg bg-[#FF5C00]/20 flex items-center justify-center border border-[#FF5C00]/40 text-[#FF5C00] shrink-0">
+            <Flame size={15} className="animate-pulse text-[#FF5C00]" />
+          </div>
+          <div className="min-w-0">
+            <span className="text-[10px] font-black text-[#FF5C00] uppercase tracking-wider font-mono block truncate">
+              ⏱️ Temps de Préparation Estimé
+            </span>
+            <span className="text-xs font-bold text-white flex items-center gap-1.5 truncate">
+              <span>{stageIcon}</span>
+              <span className="truncate">{stageText}</span>
+            </span>
+          </div>
+        </div>
+
+        {/* Live Indicator */}
+        <div className="flex items-center gap-1.5 bg-black/60 border border-white/10 px-2 py-1 rounded-full shrink-0">
+          <span className="w-2 h-2 rounded-full bg-[#FF5C00] animate-ping shrink-0" />
+          <span className="text-[9px] font-mono font-black text-amber-400 uppercase tracking-widest">
+            En direct
+          </span>
+        </div>
+      </div>
+
+      {/* Main Big Timer Display */}
+      <div className="bg-zinc-950/80 border border-white/5 rounded-xl p-3 flex items-center justify-between">
+        <div>
+          <p className="text-[9px] text-zinc-500 font-mono font-bold uppercase tracking-wider">
+            Compte à Rebours Cuisine :
+          </p>
+          <div className="text-2xl font-black font-mono tracking-wider text-amber-400 drop-shadow-[0_0_12px_rgba(255,165,0,0.3)] flex items-baseline gap-1">
+            <span>{formattedTime}</span>
+            <span className="text-xs font-semibold text-zinc-500">min:sec</span>
+          </div>
+        </div>
+
+        <div className="text-right font-mono text-[10px] text-zinc-400 space-y-0.5">
+          <p>Estimé: <strong className="text-white">{estimatedPrepMinutes} min</strong></p>
+          <p>Écoulé: <strong className="text-amber-400">{Math.floor(elapsedSeconds / 60)}m {String(elapsedSeconds % 60).padStart(2, '0')}s</strong></p>
+        </div>
+      </div>
+
+      {/* Progress Bar */}
+      <div className="space-y-1">
+        <div className="flex justify-between text-[9px] font-mono font-bold text-zinc-400">
+          <span>Progression ({Math.round(progressPercent)}%)</span>
+          <span>{remainingSeconds === 0 ? "Finition 🔥" : "Cuisine Active 🍳"}</span>
+        </div>
+        <div className="w-full h-2 bg-zinc-900 rounded-full overflow-hidden p-0.5 border border-white/5">
+          <div 
+            className="h-full bg-gradient-to-r from-amber-500 via-[#FF5C00] to-emerald-400 rounded-full transition-all duration-1000 ease-linear shadow-sm"
+            style={{ width: `${progressPercent}%` }}
+          />
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const OrderStepTracker = ({ status, courierStatus, deliveryType }: { status: string; courierStatus?: string; deliveryType?: string }) => {
+  const isClickCollect = deliveryType === 'click_and_collect';
+
   const stepsList = [
-    { label: 'Reçue', desc: 'Commande placée', icon: '📝', key: 'pending' },
-    { label: 'Cuisine', desc: 'Préparation', icon: '🍳', key: 'preparing' },
-    { 
-      label: deliveryType === 'click_and_collect' ? 'Prêt' : 'En route', 
-      desc: deliveryType === 'click_and_collect' ? 'À récupérer' : 'En chemin', 
-      icon: deliveryType === 'click_and_collect' ? '📦' : '🛵', 
-      key: 'ready' 
+    {
+      id: 'placed',
+      label: 'Placed',
+      labelFr: 'Passée',
+      desc: 'Commande enregistrée',
+      icon: ShoppingBag
     },
-    { label: 'Livrée', desc: 'Dégustez !', icon: '✨', key: 'delivered' }
+    {
+      id: 'preparing',
+      label: 'Preparing',
+      labelFr: 'En cuisine',
+      desc: 'Préparation des plats',
+      icon: ChefHat
+    },
+    {
+      id: 'ready',
+      label: 'Ready',
+      labelFr: 'Prête',
+      desc: isClickCollect ? 'Prêt pour retrait' : 'Prête au restaurant',
+      icon: Package
+    },
+    {
+      id: 'out_for_delivery',
+      label: 'Out for Delivery',
+      labelFr: isClickCollect ? 'En chemin' : 'En livraison',
+      desc: isClickCollect ? 'En cours de déplacement' : 'Livreur en route',
+      icon: isClickCollect ? Clock : Truck
+    },
+    {
+      id: 'delivered',
+      label: 'Delivered',
+      labelFr: 'Livrée',
+      desc: 'Remise effectuée',
+      icon: CheckCircle
+    }
   ];
 
   const getActiveStepIndex = () => {
-    switch (status) {
-      case 'pending': return 0;
-      case 'preparing': return 1;
-      case 'ready': return 2;
-      case 'delivered': return 3;
-      default: return -1;
+    if (status === 'delivered' || courierStatus === 'delivered') return 4;
+    if (courierStatus === 'en_route') return 3;
+    if (status === 'ready') {
+      if (courierStatus === 'en_route') return 3;
+      return 2;
     }
+    if (status === 'preparing') return 1;
+    if (status === 'pending') return 0;
+    return 0;
   };
 
   const activeIndex = getActiveStepIndex();
+  const progressPercent = (activeIndex / 4) * 100;
+  const activeStep = stepsList[activeIndex] || stepsList[0];
 
   return (
-    <div className="py-2 px-1 bg-zinc-950/45 rounded-xl border border-white/5 space-y-2.5">
-      <p className="text-[8.5px] text-zinc-500 uppercase tracking-widest font-black font-sans px-1">Progression de la commande</p>
-      
-      <div className="relative flex justify-between items-start px-1.5">
-        {/* Horizontal background bar */}
-        <div className="absolute top-3.5 left-4 right-4 h-[1.5px] bg-zinc-800 z-0" />
-        
-        {/* Horizontal fill bar */}
-        <div 
-          className="absolute top-3.5 left-4 h-[1.5px] bg-[#FF5C00] z-0 transition-all duration-1000"
-          style={{ 
-            width: activeIndex === -1 ? '0%' : `${(activeIndex / (stepsList.length - 1)) * 90}%` 
-          }}
-        />
+    <div className="py-3 px-3.5 bg-zinc-950/80 rounded-2xl border border-white/10 space-y-3.5 shadow-inner">
+      {/* Top Header Row with status badge */}
+      <div className="flex items-center justify-between text-xs font-mono">
+        <div className="flex items-center gap-1.5">
+          <span className="relative flex h-2 w-2">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#FF5C00] opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-[#FF5C00]"></span>
+          </span>
+          <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">
+            Suivi Temps Réel
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] font-black uppercase text-[#FF5C00] bg-[#FF5C00]/15 px-2.5 py-0.5 rounded-full border border-[#FF5C00]/30 shadow-sm">
+            {activeStep.label} • {activeStep.labelFr}
+          </span>
+          <span className="text-[10px] text-zinc-500 font-bold">
+            {activeIndex + 1}/5
+          </span>
+        </div>
+      </div>
 
-        {stepsList.map((step, idx) => {
-          const isCompleted = idx <= activeIndex;
-          const isActive = idx === activeIndex;
-          
-          return (
-            <div key={idx} className="flex flex-col items-center text-center z-10 relative w-1/4">
-              {/* Outer Indicator circle */}
-              <div 
-                className={`w-7 h-7 rounded-full flex items-center justify-center border text-[11px] transition-all duration-300 ${
-                  isActive 
-                    ? 'bg-[#FF5C00] border-[#FF5C00] text-white scale-110 shadow-[0_0_8px_rgba(255,92,0,0.5)] font-bold' 
-                    : isCompleted 
-                      ? 'bg-zinc-900 border-[#FF5C00] text-[#FF5C00]' 
-                      : 'bg-zinc-900 border-zinc-800 text-zinc-600'
-                }`}
-              >
-                {step.icon}
+      {/* Step-based Visual Progress Bar */}
+      <div className="relative pt-1 pb-1">
+        {/* Progress Track Background */}
+        <div className="absolute top-4 left-[10%] right-[10%] h-1.5 bg-zinc-800 rounded-full z-0" />
+
+        {/* Animated Active Fill Line */}
+        <div
+          className="absolute top-4 left-[10%] h-1.5 bg-gradient-to-r from-amber-500 via-[#FF5C00] to-emerald-400 rounded-full z-0 transition-all duration-700 ease-out shadow-[0_0_12px_rgba(255,92,0,0.6)]"
+          style={{
+            width: activeIndex === 0 ? '0%' : `calc(${progressPercent}% * 0.8)`
+          }}
+        >
+          <div className="absolute right-0 top-1/2 -translate-y-1/2 w-2.5 h-2.5 bg-white rounded-full shadow-[0_0_8px_#FF5C00] animate-pulse" />
+        </div>
+
+        {/* 5 Step Nodes */}
+        <div className="relative z-10 flex justify-between items-start">
+          {stepsList.map((step, idx) => {
+            const isCompleted = idx < activeIndex;
+            const isActive = idx === activeIndex;
+            const StepIcon = step.icon;
+
+            return (
+              <div key={step.id} className="flex flex-col items-center text-center w-1/5 group">
+                {/* Circle Icon */}
+                <div
+                  className={`w-7 sm:w-8 h-7 sm:h-8 rounded-full flex items-center justify-center transition-all duration-300 border ${
+                    isActive
+                      ? 'bg-[#FF5C00] border-[#FF5C00] text-white scale-110 ring-4 ring-[#FF5C00]/25 shadow-[0_0_14px_rgba(255,92,0,0.6)] font-bold'
+                      : isCompleted
+                      ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400'
+                      : 'bg-zinc-900/90 border-zinc-800 text-zinc-600'
+                  }`}
+                >
+                  {isCompleted ? (
+                    <Check size={13} className="stroke-[3]" />
+                  ) : (
+                    <StepIcon size={13} className={isActive ? 'animate-pulse' : ''} />
+                  )}
+                </div>
+
+                {/* Primary Step Label */}
+                <span
+                  className={`text-[8.5px] sm:text-[9.5px] font-black uppercase mt-1.5 tracking-tight leading-none ${
+                    isActive
+                      ? 'text-[#FF5C00]'
+                      : isCompleted
+                      ? 'text-emerald-400'
+                      : 'text-zinc-500'
+                  }`}
+                >
+                  {step.label}
+                </span>
+
+                {/* Secondary French Subtext */}
+                <span className="text-[7.5px] text-zinc-400 font-medium font-sans truncate max-w-full block mt-0.5">
+                  {step.labelFr}
+                </span>
               </div>
-              
-              {/* Text label */}
-              <span className={`text-[7.5px] font-black uppercase mt-1 tracking-wider ${
-                isActive ? 'text-[#FF5C00]' : isCompleted ? 'text-zinc-300' : 'text-zinc-600'
-              }`}>
-                {step.label}
-              </span>
-              
-              {/* Desc */}
-              <span className="text-[6px] text-zinc-500 font-sans truncate max-w-full block">
-                {step.desc}
-              </span>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
       </div>
     </div>
   );
@@ -536,53 +939,65 @@ const MapRoutePreview = ({
       </div>
 
       <div className="relative h-44 bg-[#0a0a0c] border border-white/5 rounded-lg overflow-hidden">
-        <APIProvider apiKey={API_KEY} version="weekly">
-          <Map
-            defaultCenter={{ lat: (restLat + userLat) / 2, lng: (restLng + userLng) / 2 }}
-            defaultZoom={14}
-            mapId="DEMO_MAP_ID"
-            gestureHandling="greedy"
-            disableDefaultUI={true}
-            internalUsageAttributionIds={['gmp_mcp_codeassist_v1_aistudio']}
-            style={{ width: '100%', height: '100%' }}
-          >
-            <AdvancedMarker position={{ lat: restLat, lng: restLng }} title={order.restaurantName || "Restaurant"}>
-              <div 
-                className="w-8 h-8 flex items-center justify-center bg-black border-2 border-[#FF5C00] rounded-full shadow-lg text-sm select-none"
-                style={{ width: '32px', height: '32px' }}
-              >
-                🏪
-              </div>
-            </AdvancedMarker>
-
-            <AdvancedMarker position={{ lat: userLat, lng: userLng }} title="Votre adresse">
-              <div 
-                className="w-8 h-8 flex items-center justify-center bg-black border-2 border-blue-500 rounded-full shadow-lg text-sm select-none"
-                style={{ width: '32px', height: '32px' }}
-              >
-                🏠
-              </div>
-            </AdvancedMarker>
-
-            {(hasCourierPosition || isClickCollect) && liveOrder.status !== 'delivered' && (
-              <AdvancedMarker position={{ lat: courierLat, lng: courierLng }} title={isClickCollect ? "Votre trajet" : "Livreur en route"}>
+        {hasValidKey ? (
+          <APIProvider apiKey={API_KEY} version="weekly">
+            <Map
+              defaultCenter={{ lat: (restLat + userLat) / 2, lng: (restLng + userLng) / 2 }}
+              defaultZoom={14}
+              mapId="DEMO_MAP_ID"
+              gestureHandling="greedy"
+              disableDefaultUI={true}
+              internalUsageAttributionIds={['gmp_mcp_codeassist_v1_aistudio']}
+              style={{ width: '100%', height: '100%' }}
+            >
+              <AdvancedMarker position={{ lat: restLat, lng: restLng }} title={order.restaurantName || "Restaurant"}>
                 <div 
-                  className="w-8 h-8 flex items-center justify-center bg-[#FF5C00] border-2 border-white rounded-full shadow-lg text-sm animate-bounce select-none"
+                  className="w-8 h-8 flex items-center justify-center bg-black border-2 border-[#FF5C00] rounded-full shadow-lg text-sm select-none"
                   style={{ width: '32px', height: '32px' }}
                 >
-                  {isClickCollect ? "🏃‍♂️" : getVehicleEmoji(courierDetails?.vehicle)}
+                  🏪
                 </div>
               </AdvancedMarker>
-            )}
 
-            <Polyline path={path} />
-            <MapController 
-              restCoords={{ lat: restLat, lng: restLng }} 
-              userCoords={{ lat: userLat, lng: userLng }} 
-              courierCoords={courierCoordsForMap}
-            />
-          </Map>
-        </APIProvider>
+              <AdvancedMarker position={{ lat: userLat, lng: userLng }} title="Votre adresse">
+                <div 
+                  className="w-8 h-8 flex items-center justify-center bg-black border-2 border-blue-500 rounded-full shadow-lg text-sm select-none"
+                  style={{ width: '32px', height: '32px' }}
+                >
+                  🏠
+                </div>
+              </AdvancedMarker>
+
+              {(hasCourierPosition || isClickCollect) && liveOrder.status !== 'delivered' && (
+                <AdvancedMarker position={{ lat: courierLat, lng: courierLng }} title={isClickCollect ? "Votre trajet" : "Livreur en route"}>
+                  <div 
+                    className="w-8 h-8 flex items-center justify-center bg-[#FF5C00] border-2 border-white rounded-full shadow-lg text-sm animate-bounce select-none"
+                    style={{ width: '32px', height: '32px' }}
+                  >
+                    {isClickCollect ? "🏃‍♂️" : getVehicleEmoji(courierDetails?.vehicle)}
+                  </div>
+                </AdvancedMarker>
+              )}
+
+              <Polyline path={path} />
+              <MapController 
+                restCoords={{ lat: restLat, lng: restLng }} 
+                userCoords={{ lat: userLat, lng: userLng }} 
+                courierCoords={courierCoordsForMap}
+              />
+            </Map>
+          </APIProvider>
+        ) : (
+          <div className="w-full h-full flex flex-col items-center justify-center p-4 text-center bg-zinc-900/60 select-none">
+            <span className="text-2xl mb-1">🗺️</span>
+            <p className="text-[11px] font-bold text-zinc-300">
+              {isClickCollect ? "Itinéraire Click & Collect" : "Suivi de livraison en direct"}
+            </p>
+            <p className="text-[10px] text-zinc-500 mt-0.5">
+              {order.restaurantName || "Restaurant"} ➔ {order.customerAddress || "Point de retrait"}
+            </p>
+          </div>
+        )}
 
         <div className="absolute bottom-1 right-1 bg-black/85 px-1.5 py-0.5 rounded border border-white/5 text-[7px] font-bold font-mono text-zinc-400 z-10">
           ⏱️ {liveOrder.status === 'delivered' ? 'Livré' : liveOrder.status === 'ready' ? 'Prêt pour retrait' : hasCourierPosition ? 'GPS Actif' : `ETA: ~10 min (Progression: ${courierProgress}%)`}
@@ -757,13 +1172,115 @@ const OrderReviewForm = ({ order, user, onReviewSubmitted }: { order: Order; use
   );
 };
 
-export default function OrdersHistory({ isOpen, onClose, orders, user, restaurants, userLocation }: OrdersHistoryProps) {
+export default function OrdersHistory({ 
+  isOpen, 
+  onClose, 
+  orders, 
+  user, 
+  restaurants, 
+  userLocation,
+  dishes = [],
+  onAddToCart,
+  onOpenCart,
+  onOrderUpdated
+}: OrdersHistoryProps) {
   const [activeTab, setActiveTab] = useState<'orders' | 'loyalty'>('orders');
   const [pointsBalance, setPointsBalance] = useState<number>(0);
   const [rewardClaims, setRewardClaims] = useState<any[]>([]);
   const [isRedeeming, setIsRedeeming] = useState<boolean>(false);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const [submittedReviews, setSubmittedReviews] = useState<Record<string, { rating: number; text: string }>>({});
+  const [reorderToast, setReorderToast] = useState<{ type: 'success' | 'error' | 'warning'; message: string } | null>(null);
+
+  // Cancellation Modal State
+  const [selectedOrderToCancel, setSelectedOrderToCancel] = useState<Order | null>(null);
+  const [isCancelModalOpen, setIsCancelModalOpen] = useState<boolean>(false);
+
+  const handleConfirmCancelOrder = async (orderId: string, reason: string) => {
+    try {
+      const res = await fetch(`/api/orders/${orderId}/cancel`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason })
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        
+        // Custom interactive cancellation toast
+        const cancelToast = document.createElement('div');
+        cancelToast.className = 'fixed top-6 left-1/2 -translate-x-1/2 z-[150] bg-zinc-950 text-white px-5 py-3.5 rounded-2xl font-sans text-xs shadow-2xl flex flex-col gap-1 border border-red-500/30 animate-bounce w-80 max-w-[90%]';
+        cancelToast.innerHTML = `
+          <div class="flex items-center gap-2 text-red-400 font-black uppercase text-[10px] tracking-wider">
+            <span>❌ Commande Annulée</span>
+          </div>
+          <p class="text-zinc-200 text-[10.5px] leading-snug">${data.message}</p>
+        `;
+        document.body.appendChild(cancelToast);
+        setTimeout(() => cancelToast.remove(), 4500);
+
+        if (onOrderUpdated && data.order) {
+          onOrderUpdated(data.order);
+        }
+
+        setIsCancelModalOpen(false);
+        setSelectedOrderToCancel(null);
+      } else {
+        const errorData = await res.json();
+        alert(errorData.error || "Impossible d'annuler la commande.");
+      }
+    } catch (err) {
+      console.error('Error cancelling order:', err);
+      alert("Erreur réseau lors de la tentative d'annulation.");
+    }
+  };
+
+  // Re-order handler that adds items back to cart if available in menu
+  const handleReorderOrder = (order: Order) => {
+    if (!order.items || order.items.length === 0) {
+      setReorderToast({ type: 'error', message: 'Cette commande ne contient aucun article.' });
+      setTimeout(() => setReorderToast(null), 3000);
+      return;
+    }
+
+    let addedCount = 0;
+    let missingCount = 0;
+
+    order.items.forEach(item => {
+      // Find matching dish in available menu by id or dishName
+      const dish = dishes.find(d => 
+        d.id === item.dishId || 
+        (item.dishName && d.name.toLowerCase().trim() === item.dishName.toLowerCase().trim())
+      );
+
+      if (dish && dish.isAvailable !== false) {
+        if (onAddToCart) {
+          onAddToCart(dish, item.quantity);
+          addedCount += item.quantity;
+        }
+      } else {
+        missingCount++;
+      }
+    });
+
+    if (addedCount > 0) {
+      const msg = missingCount > 0
+        ? `🛒 ${addedCount} article(s) réajouté(s) au panier ! (${missingCount} indisponible)`
+        : `🛒 ${addedCount} article(s) réajouté(s) au panier avec succès !`;
+      setReorderToast({ type: 'success', message: msg });
+      setTimeout(() => {
+        setReorderToast(null);
+        onClose();
+        if (onOpenCart) onOpenCart();
+      }, 1000);
+    } else {
+      setReorderToast({ 
+        type: 'error', 
+        message: 'Désolé, les articles de cette commande ne sont plus disponibles actuellement dans le menu.' 
+      });
+      setTimeout(() => setReorderToast(null), 3500);
+    }
+  };
 
   // Sync state on open & user change
   useEffect(() => {
@@ -848,7 +1365,7 @@ export default function OrdersHistory({ isOpen, onClose, orders, user, restauran
     : orders; // fallback to all for simplicity or testing
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-black/85 backdrop-blur-sm transition-opacity duration-300">
+    <div className="fixed inset-0 z-[100] flex justify-end bg-black/85 backdrop-blur-sm transition-opacity duration-300">
       {/* Click outside to close */}
       <div className="absolute inset-0" onClick={onClose} />
 
@@ -900,7 +1417,20 @@ export default function OrdersHistory({ isOpen, onClose, orders, user, restauran
           
           {/* TAB 1: ORDERS LIST */}
           {activeTab === 'orders' && (
-            userOrders.length === 0 ? (
+            <>
+              {reorderToast && (
+                <div className={`p-3 rounded-xl border text-xs font-bold font-sans transition-all animate-fadeIn ${
+                  reorderToast.type === 'success' 
+                    ? 'bg-green-500/10 border-green-500/20 text-green-400' 
+                    : reorderToast.type === 'warning'
+                    ? 'bg-amber-500/10 border-amber-500/20 text-amber-400'
+                    : 'bg-red-500/10 border-red-500/20 text-red-400'
+                }`}>
+                  {reorderToast.message}
+                </div>
+              )}
+
+              {userOrders.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full text-center px-4">
                 <div className="p-4 rounded-full bg-zinc-900/60 text-zinc-500 mb-4 border border-white/5">
                   <ShoppingBag size={36} className="stroke-[1.5]" />
@@ -957,7 +1487,16 @@ export default function OrdersHistory({ isOpen, onClose, orders, user, restauran
 
                       {/* Step-based Progress Tracker */}
                       {!isCancelled && (
-                        <OrderStepTracker status={order.status} deliveryType={order.deliveryType} />
+                        <OrderStepTracker status={order.status} courierStatus={order.courierStatus} deliveryType={order.deliveryType} />
+                      )}
+
+                      {/* Real-Time Countdown Timer for Preparing Orders */}
+                      {isPreparing && (
+                        <PreparingCountdownTimer 
+                          createdAt={order.createdAt}
+                          estimatedPrepMinutes={order.estimatedPrepMinutes || 15}
+                          deliveryType={order.deliveryType}
+                        />
                       )}
 
                       {/* Map preview with estimated route (Active orders only) */}
@@ -986,6 +1525,54 @@ export default function OrdersHistory({ isOpen, onClose, orders, user, restauran
                         <span className="text-zinc-500 font-medium">Total payé (Stripe)</span>
                         <span className="text-white font-extrabold text-sm">{order.totalAmount.toFixed(2)} €</span>
                       </div>
+
+                      {/* Re-order Button & Cancel Order Button */}
+                      <div className="pt-2 border-t border-white/5 space-y-2">
+                        {!isCancelled && !isDelivered && (
+                          <button
+                            onClick={() => {
+                              setSelectedOrderToCancel(order);
+                              setIsCancelModalOpen(true);
+                            }}
+                            className="w-full py-2 px-3 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/25 font-extrabold text-[11px] uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 shadow-sm"
+                          >
+                            <AlertOctagon size={13} className="text-red-400" />
+                            <span>Annuler la commande (Conditions)</span>
+                          </button>
+                        )}
+
+                        <button
+                          onClick={() => handleReorderOrder(order)}
+                          className="w-full py-2 px-3 rounded-xl bg-[#FF5C00]/10 hover:bg-[#FF5C00] text-[#FF5C00] hover:text-white border border-[#FF5C00]/30 hover:border-[#FF5C00] font-black text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 shadow-sm cursor-pointer active:scale-95 group"
+                        >
+                          <RotateCcw size={14} className="stroke-[2.5] group-hover:-rotate-90 transition-transform duration-300" />
+                          <span>Recommander</span>
+                        </button>
+                      </div>
+
+                      {/* Cancelled Details Banner */}
+                      {isCancelled && (
+                        <div className="mt-2.5 p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-xs space-y-1.5 animate-fadeIn">
+                          <div className="flex items-center justify-between text-red-400 font-black uppercase text-[10px] tracking-wider">
+                            <span className="flex items-center gap-1">
+                              <XCircle size={13} />
+                              Commande Annulée
+                            </span>
+                            {order.cancelledAt && (
+                              <span className="text-zinc-500 text-[8.5px] font-mono">
+                                {new Date(order.cancelledAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-zinc-300 font-medium italic text-[10.5px]">"{order.cancelReason || 'Annulée par le client'}"</p>
+                          {order.cancellationRefundAmount !== undefined && (
+                            <div className="pt-1.5 text-[10px] font-mono text-emerald-400 border-t border-red-500/15 flex items-center justify-between">
+                              <span>Remboursement bancaire :</span>
+                              <span className="font-bold">{order.cancellationRefundAmount.toFixed(2)} € récrédités</span>
+                            </div>
+                          )}
+                        </div>
+                      )}
 
                       {/* Feedback Rating & Comment (Only for delivered/completed orders) */}
                       {isDelivered && (
@@ -1026,8 +1613,9 @@ export default function OrdersHistory({ isOpen, onClose, orders, user, restauran
                   );
                 })}
               </div>
-            )
-          )}
+            )}
+          </>
+        )}
 
           {/* TAB 2: LOYALTY CLUB & REWARDS */}
           {activeTab === 'loyalty' && (
@@ -1185,6 +1773,17 @@ export default function OrdersHistory({ isOpen, onClose, orders, user, restauran
 
         </div>
       </div>
+
+      {/* MODAL: CANCEL ORDER WITH CONDITIONS */}
+      <CancelOrderModal
+        order={selectedOrderToCancel}
+        isOpen={isCancelModalOpen}
+        onClose={() => {
+          setIsCancelModalOpen(false);
+          setSelectedOrderToCancel(null);
+        }}
+        onConfirmCancel={handleConfirmCancelOrder}
+      />
     </div>
   );
 }

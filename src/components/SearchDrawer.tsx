@@ -1,8 +1,13 @@
 import React, { useState, useEffect } from 'react';
+import LazyImage from './LazyImage';
 import { 
   Search, MapPin, X, Flame, Compass, UtensilsCrossed, Store, ArrowRight, 
-  Map, Sliders, Mic, Sparkles, Globe, RefreshCw, Check, Navigation, AlertCircle 
+  Map, Sliders, Mic, Sparkles, Globe, RefreshCw, Check, Navigation, AlertCircle, Zap, Clock, Leaf, ChefHat, BookOpen, ChevronDown, ChevronUp
 } from 'lucide-react';
+import { CATEGORY_LIST } from '../constants/categories';
+import { geolocationService } from '../services/GeolocationService';
+import { DIETARY_OPTIONS, checkRestaurantMatchesDietaryTag } from '../utils/dietaryUtils';
+import { notify } from '../utils/notify';
 
 interface SearchDrawerProps {
   isOpen: boolean;
@@ -19,8 +24,18 @@ interface SearchDrawerProps {
   dishes?: any[];
   isProximityFirst?: boolean;
   setIsProximityFirst?: (val: boolean) => void;
-  feedSortOrder?: 'recent' | 'oldest' | 'likes' | 'distance';
-  setFeedSortOrder?: (val: 'recent' | 'oldest' | 'likes' | 'distance') => void;
+  feedSortOrder?: 'taste_profile' | 'recommended' | 'recent' | 'oldest' | 'likes' | 'distance';
+  setFeedSortOrder?: (val: 'taste_profile' | 'recommended' | 'recent' | 'oldest' | 'likes' | 'distance') => void;
+  onOpenTasteProfileModal?: () => void;
+  proximityRadius?: number;
+  setProximityRadius?: (radius: number) => void;
+  isFastLane?: boolean;
+  setIsFastLane?: (val: boolean) => void;
+  maxPrepTimeMinutes?: number;
+  setMaxPrepTimeMinutes?: (minutes: number) => void;
+  selectedDietaryTags?: string[];
+  setSelectedDietaryTags?: (tags: string[]) => void;
+  onSelectDish?: (dishId: string) => void;
 }
 
 const FRENCH_CITIES = [
@@ -41,19 +56,7 @@ const FRENCH_CITIES = [
   { name: 'Toulon', region: 'PACA', lat: 43.1242, lng: 5.9280 }
 ];
 
-const SPECIALTIES = [
-  { id: 'Italien', label: 'Italien / Pizza', emoji: '🇮🇹' },
-  { id: 'Japonais', label: 'Japonais / Sushi', emoji: '🇯🇵' },
-  { id: 'Burgers', label: 'Burgers & Street', emoji: '🍔' },
-  { id: 'Français', label: 'Français traditionnel', emoji: '🇫🇷' },
-  { id: 'Café', label: 'Café / Brunch', emoji: '☕' },
-  { id: 'Tex-Mex', label: 'Tex-Mex / Tacos', emoji: '🇲🇽' },
-  { id: 'Indien', label: 'Indien / Curry', emoji: '🇮🇳' },
-  { id: 'Vietnamien', label: 'Vietnamien / Phô', emoji: '🇻🇳' },
-  { id: 'Libanais', label: 'Libanais / Mezze', emoji: '🇱🇧' },
-  { id: 'Thaïlandais', label: 'Thaï / Pad Thaï', emoji: '🇹🇭' },
-  { id: 'Sucré', label: 'Desserts / Sucré', emoji: '🧇' }
-];
+const SPECIALTIES = CATEGORY_LIST.map(c => ({ id: c.id, label: c.label, emoji: c.emoji }));
 
 const FALLBACK_DISHES = [
   { name: 'Pizza Truffe & Stracciatella', category: 'Italien' },
@@ -64,6 +67,25 @@ const FALLBACK_DISHES = [
   { name: 'Pancakes Nutella & Banane', category: 'Sucré' },
   { name: 'Risotto aux Cèpes Sauvages', category: 'Italien' },
   { name: 'Croque-Monsieur à la Truffe', category: 'Français' }
+];
+
+const PANTRY_QUICK_CHIPS = [
+  { label: 'Œufs', emoji: '🥚' },
+  { label: 'Fromage', emoji: '🧀' },
+  { label: 'Tomates', emoji: '🍅' },
+  { label: 'Pâtes', emoji: '🍝' },
+  { label: 'Riz', emoji: '🍚' },
+  { label: 'Poulet', emoji: '🍗' },
+  { label: 'Ail & Oignons', emoji: '🧄' },
+  { label: 'Pommes de terre', emoji: '🥔' },
+  { label: 'Avocat', emoji: '🥑' },
+  { label: 'Pain', emoji: '🥖' },
+  { label: 'Lardons / Jambon', emoji: '🥓' },
+  { label: 'Thon en boîte', emoji: '🐟' },
+  { label: 'Crème fraîche', emoji: '🥛' },
+  { label: 'Champignons', emoji: '🍄' },
+  { label: 'Citron', emoji: '🍋' },
+  { label: 'Chocolat / Sucre', emoji: '🍫' }
 ];
 
 export default function SearchDrawer({
@@ -81,11 +103,179 @@ export default function SearchDrawer({
   dishes = [],
   isProximityFirst = false,
   setIsProximityFirst,
-  feedSortOrder = 'recent',
-  setFeedSortOrder
+  feedSortOrder = 'recommended',
+  setFeedSortOrder,
+  onOpenTasteProfileModal,
+  proximityRadius = 5,
+  setProximityRadius,
+  isFastLane = false,
+  setIsFastLane,
+  maxPrepTimeMinutes = 20,
+  setMaxPrepTimeMinutes,
+  selectedDietaryTags = [],
+  setSelectedDietaryTags,
+  onSelectDish
 }: SearchDrawerProps) {
   // Navigation Tabs inside Search Drawer
-  const [activeTab, setActiveTab] = useState<'classic' | 'gemini'>('classic');
+  const [activeTab, setActiveTab] = useState<'classic' | 'gemini' | 'pantry'>('classic');
+  const [localRadius, setLocalRadius] = useState<number>(proximityRadius);
+  const [localFastLane, setLocalFastLane] = useState<boolean>(isFastLane);
+  const [localMaxPrepTime, setLocalMaxPrepTime] = useState<number>(maxPrepTimeMinutes);
+  const [localDietaryTags, setLocalDietaryTags] = useState<string[]>(selectedDietaryTags);
+
+  // Pantry AI Recipe Generator States
+  const [pantryItems, setPantryItems] = useState<string[]>(['Œufs', 'Fromage', 'Tomates']);
+  const [pantryNotes, setPantryNotes] = useState<string>('');
+  const [isPantryAiLoading, setIsPantryAiLoading] = useState<boolean>(false);
+  const [pantryAiError, setPantryAiError] = useState<string | null>(null);
+  const [pantryRecipes, setPantryRecipes] = useState<any[]>([]);
+  const [pantryAiComment, setPantryAiComment] = useState<string | null>(null);
+  const [expandedRecipeIndex, setExpandedRecipeIndex] = useState<number | null>(0);
+  const [isListeningPantry, setIsListeningPantry] = useState<boolean>(false);
+
+  const togglePantryChip = (label: string) => {
+    if (pantryItems.includes(label)) {
+      setPantryItems(pantryItems.filter(i => i !== label));
+    } else {
+      setPantryItems([...pantryItems, label]);
+    }
+  };
+
+  const handleListenPantry = () => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert("La reconnaissance vocale n'est pas supportée par votre navigateur.");
+      return;
+    }
+
+    if (isListeningPantry) {
+      setIsListeningPantry(false);
+      return;
+    }
+
+    try {
+      const recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = false;
+      recognition.lang = 'fr-FR';
+
+      recognition.onstart = () => {
+        setIsListeningPantry(true);
+      };
+
+      recognition.onresult = (event: any) => {
+        const transcript = event.results[0][0].transcript;
+        if (transcript) {
+          setPantryNotes(prev => prev ? `${prev}, ${transcript}` : transcript);
+        }
+      };
+
+      recognition.onerror = () => {
+        setIsListeningPantry(false);
+      };
+
+      recognition.onend = () => {
+        setIsListeningPantry(false);
+      };
+
+      recognition.start();
+    } catch {
+      setIsListeningPantry(false);
+    }
+  };
+
+  const handlePantrySubmit = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (pantryItems.length === 0 && !pantryNotes.trim()) {
+      setPantryAiError("Veuillez sélectionner ou saisir au moins un ingrédient !");
+      return;
+    }
+
+    setIsPantryAiLoading(true);
+    setPantryAiError(null);
+    setPantryRecipes([]);
+    setPantryAiComment(null);
+
+    try {
+      const response = await fetch('/api/ai/pantry-recipes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ingredients: pantryItems,
+          customNotes: pantryNotes,
+          dietaryTags: currentDietaryTags
+        })
+      });
+
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || "Erreur de génération des recettes par l'IA.");
+      }
+
+      setPantryRecipes(data.recipes || []);
+      setPantryAiComment(data.aiComment || null);
+      setExpandedRecipeIndex(0); // expand first recipe by default
+    } catch (err: any) {
+      console.error("[Pantry AI Submit ERROR]", err);
+      setPantryAiError(err.message || "Erreur lors du calcul des recettes.");
+    } finally {
+      setIsPantryAiLoading(false);
+    }
+  };
+
+  const currentRadius = proximityRadius !== undefined ? proximityRadius : localRadius;
+  const isFastLaneState = isFastLane !== undefined ? isFastLane : localFastLane;
+  const currentMaxPrepTime = maxPrepTimeMinutes !== undefined ? maxPrepTimeMinutes : localMaxPrepTime;
+  const currentDietaryTags = selectedDietaryTags !== undefined ? selectedDietaryTags : localDietaryTags;
+
+  const handleRadiusChange = (newRadius: number) => {
+    setLocalRadius(newRadius);
+    if (setProximityRadius) {
+      setProximityRadius(newRadius);
+    }
+  };
+
+  const handleFastLaneToggle = (val: boolean) => {
+    setLocalFastLane(val);
+    if (val && (!localMaxPrepTime || localMaxPrepTime > 10)) {
+      setLocalMaxPrepTime(10);
+      if (setMaxPrepTimeMinutes) {
+        setMaxPrepTimeMinutes(10);
+      }
+    }
+    if (setIsFastLane) {
+      setIsFastLane(val);
+    }
+  };
+
+  const handlePrepTimeChange = (val: number) => {
+    setLocalMaxPrepTime(val);
+    if (setMaxPrepTimeMinutes) {
+      setMaxPrepTimeMinutes(val);
+    }
+    if (!localFastLane && setIsFastLane) {
+      setLocalFastLane(true);
+      setIsFastLane(true);
+    }
+  };
+
+  const handleToggleDietaryTag = (tagId: string) => {
+    const isAdding = !currentDietaryTags.includes(tagId);
+    const updated = isAdding
+      ? [...currentDietaryTags, tagId]
+      : currentDietaryTags.filter(t => t !== tagId);
+    setLocalDietaryTags(updated);
+    if (setSelectedDietaryTags) {
+      setSelectedDietaryTags(updated);
+    }
+    const tagObj = DIETARY_OPTIONS.find(o => o.id === tagId);
+    const tagName = tagObj ? tagObj.label : tagId;
+    if (isAdding) {
+      notify("🔍 FILTRE D'ALIMENTATION", `Filtre "${tagName}" activé`, "info");
+    } else {
+      notify("🔍 FILTRE RETIRÉ", `Filtre "${tagName}" désactivé`, "info");
+    }
+  };
   
   // Sector States
   const [selectedCity, setSelectedCity] = useState<string>('Paris');
@@ -229,9 +419,30 @@ export default function SearchDrawer({
     }
   };
 
+  // Helper to calculate or retrieve average preparation time for a restaurant
+  const getRestaurantPrepTime = (r: any): number => {
+    if (r.avgPreparationTimeMinutes !== undefined && r.avgPreparationTimeMinutes > 0) return r.avgPreparationTimeMinutes;
+    if (r.preparationTimeMinutes !== undefined && r.preparationTimeMinutes > 0) return r.preparationTimeMinutes;
+    
+    // Check dishes if available
+    if (dishes && dishes.length > 0) {
+      const restDishes = dishes.filter(d => d.restaurantId === r.id);
+      const validTimes = restDishes
+        .map(d => d.preparationTimeMinutes)
+        .filter((t): t is number => typeof t === 'number' && t > 0);
+      if (validTimes.length > 0) {
+        return Math.round(validTimes.reduce((a, b) => a + b, 0) / validTimes.length);
+      }
+    }
+
+    // Deterministic realistic fallback (10 to 24 mins)
+    const code = (r.id || r.name || '0').split('').reduce((acc: number, ch: string) => acc + ch.charCodeAt(0), 0);
+    return 10 + (code % 15);
+  };
+
   if (!isOpen) return null;
 
-  // Filter restaurants by chosen city and chosen category
+  // Filter restaurants by chosen city, category, text, proximity, and fast lane prep time
   const filteredRestaurants = restaurants.filter(r => {
     // City filter
     const restCity = (r.city || 'Paris').toLowerCase();
@@ -254,8 +465,42 @@ export default function SearchDrawer({
       textMatch = nameMatch || descMatch;
     }
 
-    return cityMatch && categoryMatch && textMatch;
+    // Radius proximity filter (when user location or proximity mode is active)
+    let radiusMatch = true;
+    if ((userLocation || isProximityFirst) && userLocation && r.latitude && r.longitude) {
+      const dist = geolocationService.calculateDistanceKm(
+        userLocation.lat,
+        userLocation.lng,
+        r.latitude,
+        r.longitude
+      );
+      radiusMatch = dist <= currentRadius;
+    }
+
+    // Fast Lane preparation time filter
+    let fastLaneMatch = true;
+    if (isFastLaneState) {
+      const prepTime = getRestaurantPrepTime(r);
+      fastLaneMatch = prepTime <= currentMaxPrepTime;
+    }
+
+    // Dietary preferences filter
+    let dietaryMatch = true;
+    if (currentDietaryTags.length > 0) {
+      dietaryMatch = currentDietaryTags.every(tag => checkRestaurantMatchesDietaryTag(r, tag, dishes));
+    }
+
+    return cityMatch && categoryMatch && textMatch && radiusMatch && fastLaneMatch && dietaryMatch;
   });
+
+  // Sort by closest distance if proximity is active
+  if ((userLocation || isProximityFirst) && userLocation) {
+    filteredRestaurants.sort((a, b) => {
+      const distA = (a.latitude && a.longitude) ? geolocationService.calculateDistanceKm(userLocation.lat, userLocation.lng, a.latitude, a.longitude) : 999;
+      const distB = (b.latitude && b.longitude) ? geolocationService.calculateDistanceKm(userLocation.lat, userLocation.lng, b.latitude, b.longitude) : 999;
+      return distA - distB;
+    });
+  }
 
   const handleSelectRestaurantInDrawer = (name: string, category: string) => {
     setSearchQuery(name);
@@ -277,7 +522,7 @@ export default function SearchDrawer({
     : FALLBACK_DISHES;
 
   return (
-    <div className="fixed inset-0 z-[80] flex flex-col justify-start">
+    <div className="fixed inset-0 z-[100] flex flex-col justify-start">
       {/* Backdrop overlay */}
       <div 
         className="absolute inset-0 bg-black/70 backdrop-blur-md transition-opacity duration-300"
@@ -305,29 +550,40 @@ export default function SearchDrawer({
           </button>
         </div>
 
-        {/* Dynamic Nav Tabs - To toggle classic map/filters and AI search */}
-        <div className="grid grid-cols-2 gap-2 mb-4 p-1 bg-zinc-950 rounded-xl border border-white/5">
+        {/* Dynamic Nav Tabs - To toggle classic map/filters, AI search, and Pantry recipes */}
+        <div className="grid grid-cols-3 gap-1.5 mb-4 p-1 bg-zinc-950 rounded-xl border border-white/5">
           <button
             onClick={() => setActiveTab('classic')}
-            className={`py-2 text-[11px] font-bold uppercase tracking-wider rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+            className={`py-2 text-[10px] font-bold uppercase tracking-wider rounded-lg transition-all flex items-center justify-center gap-1 cursor-pointer ${
               activeTab === 'classic'
                 ? 'bg-[#FF5C00] text-white shadow-lg shadow-[#FF5C00]/10'
                 : 'text-zinc-400 hover:text-zinc-200'
             }`}
           >
-            <Sliders size={12} />
-            <span>Classique & Cartes</span>
+            <Sliders size={11} />
+            <span>Classique</span>
           </button>
           <button
             onClick={() => setActiveTab('gemini')}
-            className={`py-2 text-[11px] font-bold uppercase tracking-wider rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+            className={`py-2 text-[10px] font-bold uppercase tracking-wider rounded-lg transition-all flex items-center justify-center gap-1 cursor-pointer ${
               activeTab === 'gemini'
                 ? 'bg-gradient-to-r from-indigo-500 via-purple-500 to-[#FF5C00] text-white shadow-lg'
                 : 'text-zinc-400 hover:text-zinc-200'
             }`}
           >
-            <Sparkles size={12} className="animate-spin-slow" />
-            <span>Recherche IA Gemini</span>
+            <Sparkles size={11} className="animate-spin-slow" />
+            <span>Recherche IA</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('pantry')}
+            className={`py-2 text-[10px] font-bold uppercase tracking-wider rounded-lg transition-all flex items-center justify-center gap-1 cursor-pointer ${
+              activeTab === 'pantry'
+                ? 'bg-gradient-to-r from-amber-500 via-orange-500 to-emerald-500 text-black font-black shadow-lg shadow-amber-500/20'
+                : 'text-zinc-400 hover:text-zinc-200'
+            }`}
+          >
+            <ChefHat size={11} className={activeTab === 'pantry' ? 'text-black' : 'text-amber-400'} />
+            <span>Recettes Frigo</span>
           </button>
         </div>
 
@@ -507,6 +763,49 @@ export default function SearchDrawer({
               </div>
             </div>
 
+            {/* 2.5 Dietary & Certification Badges Quick Filters */}
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-black text-zinc-400 uppercase tracking-wider font-mono flex items-center justify-between">
+                <span className="flex items-center gap-1 text-emerald-400">
+                  <span>☪️ Certifications & Régimes</span>
+                </span>
+                <span className="text-[9px] text-emerald-500/80 font-bold">Labels Officiels</span>
+              </label>
+              
+              <div className="flex flex-wrap gap-1.5">
+                {[
+                  { label: 'Halal Certifié', emoji: '☪️', tag: 'halal' },
+                  { label: 'Fait Maison', emoji: '👨‍🍳', tag: 'fait maison' },
+                  { label: 'Bio AB', emoji: '🌿', tag: 'bio' },
+                  { label: 'Végan', emoji: '🌱', tag: 'végan' },
+                  { label: 'Sans Gluten', emoji: '🌾', tag: 'gluten' },
+                  { label: 'Kasher', emoji: '✡️', tag: 'kasher' }
+                ].map((cert) => {
+                  const isActive = searchQuery.toLowerCase().includes(cert.tag);
+                  return (
+                    <button
+                      key={cert.tag}
+                      onClick={() => {
+                        if (isActive) {
+                          setSearchQuery(searchQuery.replace(new RegExp(cert.tag, 'gi'), '').trim());
+                        } else {
+                          setSearchQuery((searchQuery ? `${searchQuery} ` : '') + cert.tag);
+                        }
+                      }}
+                      className={`px-2.5 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all border flex items-center gap-1.5 cursor-pointer ${
+                        isActive
+                          ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300 shadow-md shadow-emerald-950/40'
+                          : 'bg-zinc-900/60 border-white/5 text-zinc-400 hover:text-white hover:bg-zinc-800'
+                      }`}
+                    >
+                      <span>{cert.emoji}</span>
+                      <span>{cert.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
             {/* 3. Visual Grid of Cuisine Specialties */}
             <div className="space-y-1.5">
               <label className="text-[10px] font-black text-zinc-400 uppercase tracking-wider font-mono flex items-center gap-1">
@@ -595,58 +894,178 @@ export default function SearchDrawer({
 
             {/* 5. Popular Products / Clickable Dishes List */}
             <div className="space-y-1.5">
-              <label className="text-[10px] font-black text-zinc-400 uppercase tracking-wider font-mono flex items-center gap-1">
-                <Flame size={11} className="text-[#FF5C00]" />
-                <span>Plats & Produits Populaires</span>
+              <label className="text-[10px] font-black text-zinc-400 uppercase tracking-wider font-mono flex items-center justify-between">
+                <span className="flex items-center gap-1">
+                  <Flame size={11} className="text-[#FF5C00]" />
+                  <span>Plats & Produits Populaires</span>
+                </span>
+                <span className="text-[8px] text-zinc-500 font-mono">Cliquez pour filtrer ou voir la fiche</span>
               </label>
               
               <div className="flex flex-wrap gap-1.5">
                 {popularDishes.map((dish: any, idx: number) => {
                   const isSelected = searchQuery.toLowerCase().includes(dish.name.toLowerCase());
+                  const matchingDishId = dish.id || (dishes.find(d => d.name?.toLowerCase() === dish.name?.toLowerCase())?.id);
                   return (
-                    <button
+                    <div
                       key={idx}
-                      onClick={() => {
-                        setSearchQuery(dish.name);
-                        if (dish.category) {
-                          setSelectedCategory(dish.category);
-                        }
-                      }}
-                      className={`px-2.5 py-1 rounded-lg text-[9px] font-semibold transition-all border cursor-pointer ${
+                      className={`inline-flex items-center rounded-lg text-[9px] font-semibold transition-all border ${
                         isSelected
                           ? 'bg-[#FF5C00]/10 border-[#FF5C00] text-[#FF5C00] font-black'
                           : 'bg-zinc-950 border-white/5 text-zinc-400 hover:text-white hover:border-white/10'
                       }`}
                     >
-                      🔥 {dish.name}
-                    </button>
+                      <button
+                        onClick={() => {
+                          setSearchQuery(dish.name);
+                          if (dish.category) {
+                            setSelectedCategory(dish.category);
+                          }
+                        }}
+                        className="px-2 py-1 cursor-pointer hover:text-white"
+                        title={`Filtrer les restaurants par ${dish.name}`}
+                      >
+                        🔥 {dish.name}
+                      </button>
+
+                      {matchingDishId && onSelectDish && (
+                        <button
+                          onClick={() => {
+                            onSelectDish(matchingDishId);
+                            onClose();
+                          }}
+                          className="px-1.5 py-1 border-l border-white/10 hover:bg-[#FF5C00]/20 hover:text-[#FF5C00] text-zinc-400 rounded-r-lg transition-colors cursor-pointer text-[8px] font-mono font-bold"
+                          title="Voir la fiche détaillée du plat, photos & ingrédients"
+                        >
+                          👁️ Fiche
+                        </button>
+                      )}
+                    </div>
                   );
                 })}
               </div>
             </div>
 
-            {/* 6. GPS Proximity Sort Block (Fixed and Fully Working) */}
-            <div className="bg-white/[0.02] border border-white/5 rounded-2xl p-3 space-y-2">
+            {/* 5b. Algorithme de Classement du Feed & Recommandation IA */}
+            <div className="bg-gradient-to-r from-purple-500/15 via-[#FF5C00]/10 to-transparent border border-purple-500/30 rounded-2xl p-3.5 space-y-3 shadow-lg">
               <div className="flex justify-between items-center">
-                <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest flex items-center gap-1 font-mono">
-                  <Navigation size={11} className="text-[#FF5C00]" />
-                  Tri par Proximité & Distance
+                <span className="text-[10px] font-black text-purple-300 uppercase tracking-widest flex items-center gap-1.5 font-mono">
+                  <Sparkles size={13} className="text-[#FF5C00] fill-[#FF5C00]/20" />
+                  Tri & Recommandations IA
                 </span>
-                {(userLocation || isProximityFirst) && (
-                  <span className="text-[8px] text-green-400 font-bold bg-green-500/10 px-2 py-0.5 rounded-full border border-green-500/20">
-                    GPS Actif (Rayon 5km)
-                  </span>
+                <span className="text-[9px] font-black text-purple-300 bg-purple-500/20 px-2 py-0.5 rounded-full border border-purple-500/30 font-mono uppercase">
+                  {feedSortOrder === 'taste_profile' ? '👅 Profil Gustatif' : feedSortOrder === 'recommended' ? '🧠 ML Actif' : feedSortOrder === 'distance' ? '📍 GPS' : feedSortOrder === 'likes' ? '❤️ Populaires' : '⏱️ Récents'}
+                </span>
+              </div>
+
+              {/* Special Taste Profile Banner */}
+              <div className="flex items-center justify-between gap-2 p-2.5 bg-gradient-to-r from-purple-950/60 to-black/60 border border-purple-500/40 rounded-xl">
+                <button
+                  type="button"
+                  onClick={() => setFeedSortOrder && setFeedSortOrder('taste_profile')}
+                  className={`flex-1 p-2 rounded-lg text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                    feedSortOrder === 'taste_profile'
+                      ? 'bg-gradient-to-r from-[#FF5C00] to-purple-600 text-white shadow-lg shadow-[#FF5C00]/25'
+                      : 'bg-purple-900/40 text-purple-200 hover:text-white hover:bg-purple-800/50'
+                  }`}
+                >
+                  <span>👅 Profil Gustatif IA</span>
+                  {feedSortOrder === 'taste_profile' && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />}
+                </button>
+
+                {onOpenTasteProfileModal && (
+                  <button
+                    type="button"
+                    onClick={onOpenTasteProfileModal}
+                    className="p-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white text-[10px] font-bold uppercase tracking-wider border border-zinc-700 transition-all cursor-pointer shrink-0"
+                    title="Voir et ajuster mon profil de saveurs"
+                  >
+                    ⚙️ Ajuster
+                  </button>
                 )}
               </div>
+
+              <div className="grid grid-cols-2 gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setFeedSortOrder && setFeedSortOrder('recommended')}
+                  className={`p-2 rounded-xl border text-[10px] font-black uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer ${
+                    feedSortOrder === 'recommended'
+                      ? 'bg-gradient-to-r from-purple-600 to-[#FF5C00] text-white border-purple-400 shadow-lg shadow-purple-500/20 scale-[1.02]'
+                      : 'bg-zinc-900 border-white/10 text-zinc-300 hover:text-white hover:bg-zinc-850'
+                  }`}
+                >
+                  <span>🧠 Recommandé IA</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setFeedSortOrder && setFeedSortOrder('recent')}
+                  className={`p-2 rounded-xl border text-[10px] font-black uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer ${
+                    feedSortOrder === 'recent'
+                      ? 'bg-white/20 text-white border-white/40 shadow-md'
+                      : 'bg-zinc-900 border-white/10 text-zinc-300 hover:text-white hover:bg-zinc-850'
+                  }`}
+                >
+                  <span>⏱️ Plus Récents</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setFeedSortOrder && setFeedSortOrder('likes')}
+                  className={`p-2 rounded-xl border text-[10px] font-black uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer ${
+                    feedSortOrder === 'likes'
+                      ? 'bg-red-500/20 text-red-400 border-red-500/40 shadow-md'
+                      : 'bg-zinc-900 border-white/10 text-zinc-300 hover:text-white hover:bg-zinc-850'
+                  }`}
+                >
+                  <span>❤️ Populaires</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (setFeedSortOrder) setFeedSortOrder('distance');
+                    if (setIsProximityFirst) setIsProximityFirst(true);
+                    onDetectLocation();
+                  }}
+                  className={`p-2 rounded-xl border text-[10px] font-black uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer ${
+                    feedSortOrder === 'distance'
+                      ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40 shadow-md'
+                      : 'bg-zinc-900 border-white/10 text-zinc-300 hover:text-white hover:bg-zinc-850'
+                  }`}
+                >
+                  <span>📍 Proximité</span>
+                </button>
+              </div>
+            </div>
+
+            {/* 6. GPS Proximity Sort & Range Slider Block */}
+            <div className="bg-white/[0.02] border border-white/5 rounded-2xl p-3.5 space-y-3">
+              <div className="flex justify-between items-center">
+                <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest flex items-center gap-1 font-mono">
+                  <Navigation size={12} className="text-[#FF5C00]" />
+                  Proximité & Rayon GPS
+                </span>
+                <span className={`text-[9px] font-black px-2 py-0.5 rounded-full border ${
+                  (userLocation || isProximityFirst)
+                    ? 'text-green-400 bg-green-500/10 border-green-500/20'
+                    : 'text-zinc-500 bg-zinc-900 border-white/5'
+                }`}>
+                  {(userLocation || isProximityFirst) ? `GPS Actif (${currentRadius} km)` : 'GPS Inactif'}
+                </span>
+              </div>
               
+              {/* Toggle button */}
               <button
                 onClick={() => {
                   if (userLocation || isProximityFirst) {
-                    // Reset
                     setUserLocation(null);
                     if (setIsProximityFirst) setIsProximityFirst(false);
                     if (setFeedSortOrder) setFeedSortOrder('recent');
                   } else {
+                    if (setIsProximityFirst) setIsProximityFirst(true);
+                    if (setFeedSortOrder) setFeedSortOrder('distance');
                     onDetectLocation();
                   }
                 }}
@@ -668,6 +1087,213 @@ export default function SearchDrawer({
                   </>
                 )}
               </button>
+
+              {/* Range Slider for Proximity Filtering */}
+              <div className="pt-1.5 space-y-2 border-t border-white/5">
+                <div className="flex justify-between items-center text-xs">
+                  <label className="text-[10px] font-extrabold text-zinc-300 uppercase tracking-wider font-mono flex items-center gap-1">
+                    <span>📏 Rayon de proximité</span>
+                  </label>
+                  <span className="text-[#FF5C00] font-black text-xs font-mono bg-[#FF5C00]/10 px-2 py-0.5 rounded-lg border border-[#FF5C00]/20">
+                    {currentRadius} km
+                  </span>
+                </div>
+
+                <div className="space-y-1">
+                  <input
+                    type="range"
+                    min="1"
+                    max="10"
+                    step="0.5"
+                    value={currentRadius}
+                    onChange={(e) => handleRadiusChange(parseFloat(e.target.value))}
+                    className="w-full accent-[#FF5C00] cursor-pointer h-2 bg-zinc-800 rounded-lg appearance-none"
+                  />
+                  <div className="flex justify-between text-[8px] font-mono text-zinc-500 font-bold px-0.5">
+                    <span>1 km</span>
+                    <span>3 km</span>
+                    <span>5 km</span>
+                    <span>10 km</span>
+                  </div>
+                </div>
+
+                {/* Quick preset pills */}
+                <div className="grid grid-cols-4 gap-1.5 pt-1">
+                  {[1, 3, 5, 10].map((rVal) => (
+                    <button
+                      key={rVal}
+                      onClick={() => handleRadiusChange(rVal)}
+                      className={`py-1 text-[9px] font-extrabold font-mono rounded-lg border transition-all cursor-pointer ${
+                        currentRadius === rVal
+                          ? 'bg-[#FF5C00] text-white border-[#FF5C00]'
+                          : 'bg-zinc-900 border-white/5 text-zinc-400 hover:text-white hover:border-white/10'
+                      }`}
+                    >
+                      {rVal} km
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* 6b. Fast Lane Toggle & Average Preparation Time Filter */}
+            <div className="bg-gradient-to-r from-amber-500/10 via-orange-500/5 to-amber-500/10 border border-amber-500/30 rounded-2xl p-3.5 space-y-3 shadow-lg shadow-amber-500/5">
+              <div className="flex justify-between items-center">
+                <span className="text-[10px] font-black text-amber-400 uppercase tracking-widest flex items-center gap-1.5 font-mono">
+                  <Zap size={13} className="text-amber-400 fill-amber-400" />
+                  Mode Fast Lane (Ready to Grab)
+                </span>
+                <span className={`text-[9px] font-black px-2 py-0.5 rounded-full border flex items-center gap-1 ${
+                  isFastLaneState
+                    ? 'text-amber-300 bg-amber-500/20 border-amber-500/40 shadow-sm animate-pulse'
+                    : 'text-zinc-500 bg-zinc-900 border-white/5'
+                }`}>
+                  {isFastLaneState ? (
+                    <>
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
+                      <span>⚡ Ready to grab (≤ {currentMaxPrepTime} min)</span>
+                    </>
+                  ) : (
+                    'Inactif'
+                  )}
+                </span>
+              </div>
+
+              <p className="text-[10px] text-zinc-400 font-sans leading-relaxed">
+                Trie et priorise immédiatement les plats cuisinés en moins de 10 minutes avec le badge visuel <strong className="text-amber-300">"Ready to grab"</strong> dans le feed.
+              </p>
+              
+              {/* Toggle button */}
+              <button
+                onClick={() => handleFastLaneToggle(!isFastLaneState)}
+                className={`w-full py-2.5 px-3 rounded-xl border font-black text-[10px] uppercase tracking-wider transition-all flex items-center justify-center gap-2 cursor-pointer shadow-md ${
+                  isFastLaneState
+                    ? 'bg-gradient-to-r from-amber-400 via-orange-500 to-amber-500 text-black border-amber-300 font-black scale-[1.01]' 
+                    : 'bg-zinc-900 border-amber-500/30 text-amber-400 hover:bg-amber-500/10'
+                }`}
+              >
+                <Zap size={13} className={isFastLaneState ? 'fill-black text-black' : 'text-amber-400'} />
+                <span>{isFastLaneState ? 'Désactiver le Mode Fast Lane' : '⚡ Activer Fast Lane (< 10 min Ready to grab)'}</span>
+              </button>
+
+              {/* Range Slider for Max Preparation Time Filtering */}
+              {isFastLaneState && (
+                <div className="pt-2 space-y-2 border-t border-amber-500/20">
+                  <div className="flex justify-between items-center text-xs">
+                    <label className="text-[10px] font-extrabold text-amber-200 uppercase tracking-wider font-mono flex items-center gap-1">
+                      <Clock size={11} className="text-amber-400" />
+                      <span>Temps max de préparation</span>
+                    </label>
+                    <span className="text-amber-400 font-black text-xs font-mono bg-amber-500/10 px-2 py-0.5 rounded-lg border border-amber-500/30">
+                      ≤ {currentMaxPrepTime} min
+                    </span>
+                  </div>
+
+                  <div className="space-y-1">
+                    <input
+                      type="range"
+                      min="5"
+                      max="30"
+                      step="5"
+                      value={currentMaxPrepTime}
+                      onChange={(e) => handlePrepTimeChange(parseInt(e.target.value))}
+                      className="w-full accent-amber-500 cursor-pointer h-2 bg-zinc-800 rounded-lg appearance-none"
+                    />
+                    <div className="flex justify-between text-[8px] font-mono text-amber-400/60 font-bold px-0.5">
+                      <span>5 min</span>
+                      <span>10 min (Express)</span>
+                      <span>15 min</span>
+                      <span>20 min</span>
+                      <span>30 min</span>
+                    </div>
+                  </div>
+
+                  {/* Quick preset pills */}
+                  <div className="grid grid-cols-4 gap-1.5 pt-1">
+                    {[5, 10, 15, 20].map((timeVal) => (
+                      <button
+                        key={timeVal}
+                        onClick={() => handlePrepTimeChange(timeVal)}
+                        className={`py-1.5 text-[9px] font-extrabold font-mono rounded-lg border transition-all cursor-pointer flex items-center justify-center gap-0.5 ${
+                          currentMaxPrepTime === timeVal
+                            ? 'bg-amber-400 text-black border-amber-300 font-black shadow-sm'
+                            : 'bg-zinc-900 border-amber-500/20 text-amber-300/80 hover:text-white hover:border-amber-500/40'
+                        }`}
+                      >
+                        {timeVal <= 10 && <span>⚡</span>}
+                        <span>≤ {timeVal}m</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* 6c. Dietary Preferences & Specific Diets Filter Section */}
+            <div className="bg-gradient-to-r from-emerald-500/5 via-green-500/5 to-transparent border border-emerald-500/20 rounded-2xl p-3.5 space-y-3">
+              <div className="flex justify-between items-center">
+                <span className="text-[10px] font-black text-emerald-400 uppercase tracking-widest flex items-center gap-1.5 font-mono">
+                  <Leaf size={13} className="text-emerald-400 fill-emerald-400/20" />
+                  Préférences Alimentaires & Régimes
+                </span>
+                <span className={`text-[9px] font-black px-2 py-0.5 rounded-full border ${
+                  currentDietaryTags.length > 0
+                    ? 'text-emerald-300 bg-emerald-500/20 border-emerald-500/40 font-mono'
+                    : 'text-zinc-500 bg-zinc-900 border-white/5 font-mono'
+                }`}>
+                  {currentDietaryTags.length > 0 ? `🌱 ${currentDietaryTags.length} Actif(s)` : 'Tous Régimes'}
+                </span>
+              </div>
+
+              {/* Grid of dietary option pills */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-0.5">
+                {DIETARY_OPTIONS.map((option) => {
+                  const isSelected = currentDietaryTags.includes(option.id);
+                  return (
+                    <button
+                      key={option.id}
+                      onClick={() => handleToggleDietaryTag(option.id)}
+                      className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between group ${
+                        isSelected
+                          ? 'bg-emerald-500 text-black border-emerald-400 font-bold shadow-md shadow-emerald-500/20 scale-[1.02]'
+                          : 'bg-zinc-900/90 border-white/10 text-zinc-300 hover:border-emerald-500/40 hover:text-white hover:bg-zinc-800'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between w-full">
+                        <span className="text-sm">{option.emoji}</span>
+                        {isSelected ? (
+                          <div className="w-4 h-4 rounded-full bg-black flex items-center justify-center">
+                            <Check size={10} className="text-emerald-400 stroke-[3]" />
+                          </div>
+                        ) : (
+                          <div className="w-3.5 h-3.5 rounded-full border border-zinc-700 group-hover:border-emerald-500/50" />
+                        )}
+                      </div>
+                      <span className="text-[11px] font-black mt-1.5 font-sans leading-tight">{option.label}</span>
+                      <span className={`text-[8px] line-clamp-1 mt-0.5 font-sans ${isSelected ? 'text-black/80 font-semibold' : 'text-zinc-500'}`}>
+                        {option.description}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {currentDietaryTags.length > 0 && (
+                <div className="flex justify-between items-center pt-1 border-t border-emerald-500/15">
+                  <span className="text-[9px] font-mono text-emerald-300/80">
+                    {filteredRestaurants.length} établissement(s) compatible(s)
+                  </span>
+                  <button
+                    onClick={() => {
+                      setLocalDietaryTags([]);
+                      if (setSelectedDietaryTags) setSelectedDietaryTags([]);
+                    }}
+                    className="text-[9px] font-mono font-bold text-emerald-400 hover:text-emerald-300 underline cursor-pointer"
+                  >
+                    Réinitialiser les régimes ×
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* 7. Sector Results Display List */}
@@ -698,7 +1324,13 @@ export default function SearchDrawer({
                         <div className="flex items-center gap-2.5">
                           <div className="w-8 h-8 rounded-lg bg-zinc-950 border border-white/10 flex items-center justify-center text-xs font-black shrink-0 text-[#FF5C00]">
                             {r.logoUrl ? (
-                              <img src={r.logoUrl} alt="" className="w-full h-full object-cover rounded-lg" />
+                              <LazyImage 
+                                src={r.logoUrl} 
+                                alt={r.name} 
+                                sizeType="avatar"
+                                containerClassName="w-full h-full rounded-lg overflow-hidden"
+                                className="w-full h-full object-cover" 
+                              />
                             ) : (
                               r.name.substring(0, 2).toUpperCase()
                             )}
@@ -711,6 +1343,18 @@ export default function SearchDrawer({
                               </span>
                               <span className="text-[9px] text-zinc-400 line-clamp-1">
                                 {r.district || r.city || 'Paris'}
+                              </span>
+                              {userLocation && r.latitude && r.longitude && (
+                                <span className="text-[9px] text-[#FF5C00] font-mono font-bold bg-[#FF5C00]/10 px-1.5 py-0.2 rounded border border-[#FF5C00]/20 shrink-0">
+                                  📍 {geolocationService.calculateDistanceKm(userLocation.lat, userLocation.lng, r.latitude, r.longitude).toFixed(1)} km
+                                </span>
+                              )}
+                              <span className={`text-[9px] font-mono font-bold px-1.5 py-0.2 rounded border shrink-0 flex items-center gap-0.5 ${
+                                getRestaurantPrepTime(r) <= 20
+                                  ? 'text-amber-400 bg-amber-500/10 border-amber-500/30'
+                                  : 'text-zinc-400 bg-zinc-950 border-white/5'
+                              }`}>
+                                ⏱️ {getRestaurantPrepTime(r)} min
                               </span>
                             </div>
                           </div>
@@ -730,7 +1374,7 @@ export default function SearchDrawer({
             </div>
 
             {/* Reset All Filters Button */}
-            {(userLocation || isProximityFirst || searchQuery || selectedCategory || selectedCity !== 'Paris') && (
+            {(userLocation || isProximityFirst || isFastLaneState || currentDietaryTags.length > 0 || searchQuery || selectedCategory || selectedCity !== 'Paris') && (
               <button
                 onClick={() => {
                   setUserLocation(null);
@@ -740,6 +1384,9 @@ export default function SearchDrawer({
                   setMapType('city');
                   if (setIsProximityFirst) setIsProximityFirst(false);
                   if (setFeedSortOrder) setFeedSortOrder('recent');
+                  handleFastLaneToggle(false);
+                  setLocalDietaryTags([]);
+                  if (setSelectedDietaryTags) setSelectedDietaryTags([]);
                 }}
                 className="w-full mt-2 py-2 border border-red-500/20 bg-red-500/10 text-red-400 text-[10px] font-black uppercase tracking-wider rounded-xl hover:bg-red-500/20 transition-all cursor-pointer font-sans"
               >
@@ -747,7 +1394,7 @@ export default function SearchDrawer({
               </button>
             )}
           </div>
-        ) : (
+        ) : activeTab === 'gemini' ? (
           /* TAB 2: GEMINI AI ASSISTANT FOR NATURAL LANGUAGE QUERIES */
           <div className="space-y-4">
             <div className="p-4 rounded-2xl bg-zinc-950/60 border border-white/5 space-y-3 relative overflow-hidden">
@@ -871,10 +1518,270 @@ export default function SearchDrawer({
                       ⚡ Proximité active
                     </span>
                   )}
+                  {isFastLaneState && (
+                    <span className="text-[9px] font-mono font-bold uppercase tracking-wider bg-zinc-950 px-2 py-0.5 rounded border border-amber-500/30 text-amber-400">
+                      ⚡ Fast Lane (≤ {currentMaxPrepTime} min)
+                    </span>
+                  )}
+                  {currentDietaryTags.length > 0 && (
+                    <span className="text-[9px] font-mono font-bold uppercase tracking-wider bg-zinc-950 px-2 py-0.5 rounded border border-emerald-500/30 text-emerald-400">
+                      🌱 Régimes : {currentDietaryTags.map(t => DIETARY_OPTIONS.find(o => o.id === t)?.label || t).join(', ')}
+                    </span>
+                  )}
                 </div>
                 <p className="text-[9px] text-zinc-500 font-bold animate-pulse pt-0.5 text-center">
                   Fermeture du volet et application du flux dans un instant...
                 </p>
+              </div>
+            )}
+          </div>
+        ) : (
+          /* TAB 3: AI-POWERED PANTRY RECIPE GENERATOR ("Que puis-je cuisiner ?") */
+          <div className="space-y-4">
+            <div className="p-4 rounded-2xl bg-gradient-to-br from-amber-950/40 via-zinc-950 to-zinc-950 border border-amber-500/20 space-y-3.5 relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-36 h-36 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
+              
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-lg bg-amber-500/20 flex items-center justify-center border border-amber-500/40">
+                    <ChefHat size={15} className="text-amber-400" />
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-black text-amber-400 uppercase tracking-wider font-mono block">
+                      Chef IA Garde-Manger • Gemini 3.6
+                    </span>
+                    <h4 className="text-xs font-black text-white">Que puis-je cuisiner chez moi ?</h4>
+                  </div>
+                </div>
+                <span className="text-[9px] font-mono font-bold bg-amber-500/10 border border-amber-500/30 text-amber-300 px-2 py-0.5 rounded-full">
+                  🍳 Anti-Gaspillage
+                </span>
+              </div>
+
+              <p className="text-[11px] text-zinc-300 leading-relaxed">
+                Sélectionnez les ingrédients disponibles dans votre réfrigérateur ou placard. Gemini va vous proposer des recettes sur mesure gourmandes et rapides !
+              </p>
+
+              {/* Quick Ingredient Chip Selectors */}
+              <div className="space-y-2 pt-1">
+                <div className="flex items-center justify-between text-[10px] font-mono">
+                  <span className="font-extrabold text-amber-300 uppercase tracking-wider flex items-center gap-1">
+                    <BookOpen size={11} className="text-amber-400" />
+                    <span>Sélection rapide d'ingrédients :</span>
+                  </span>
+                  {pantryItems.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setPantryItems([])}
+                      className="text-zinc-500 hover:text-red-400 underline font-semibold transition-colors cursor-pointer"
+                    >
+                      Tout effacer ({pantryItems.length})
+                    </button>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 max-h-[140px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-zinc-800">
+                  {PANTRY_QUICK_CHIPS.map((chip) => {
+                    const isSelected = pantryItems.includes(chip.label);
+                    return (
+                      <button
+                        key={chip.label}
+                        type="button"
+                        onClick={() => togglePantryChip(chip.label)}
+                        className={`px-2.5 py-1.5 rounded-xl border text-[10px] font-bold transition-all flex items-center justify-between cursor-pointer ${
+                          isSelected
+                            ? 'bg-amber-500 text-black border-amber-400 font-black shadow-md shadow-amber-500/20 scale-[1.02]'
+                            : 'bg-zinc-900/80 border-white/10 text-zinc-300 hover:border-amber-500/40 hover:text-white'
+                        }`}
+                      >
+                        <span className="flex items-center gap-1">
+                          <span>{chip.emoji}</span>
+                          <span className="truncate">{chip.label}</span>
+                        </span>
+                        {isSelected && <Check size={10} className="stroke-[3] shrink-0 text-black" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Custom Ingredients / Notes input + Voice mic */}
+              <div className="space-y-2 pt-1">
+                <label className="text-[10px] font-black text-zinc-400 uppercase tracking-wider font-mono block">
+                  Autre(s) ingrédient(s) ou précision(s) :
+                </label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={pantryNotes}
+                    onChange={(e) => setPantryNotes(e.target.value)}
+                    placeholder="Ex: 2 gousses d'ail, restes de saucisse, pot de mascarpone..."
+                    className="w-full bg-zinc-900 border border-white/10 rounded-xl p-2.5 pr-10 text-xs text-white focus:outline-none focus:border-amber-500/80 placeholder-zinc-500 font-sans"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleListenPantry}
+                    className={`absolute right-2 top-2 p-1 rounded-lg transition-all cursor-pointer ${
+                      isListeningPantry
+                        ? 'bg-red-500/20 text-red-500 border border-red-500/30'
+                        : 'text-zinc-400 hover:text-white hover:bg-white/5 bg-white/2 border border-white/5'
+                    }`}
+                    title="Dictée vocale des ingrédients"
+                  >
+                    <Mic size={13} className={isListeningPantry ? "animate-pulse" : ""} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Submit Button */}
+              <button
+                type="button"
+                onClick={() => handlePantrySubmit()}
+                disabled={isPantryAiLoading || (pantryItems.length === 0 && !pantryNotes.trim())}
+                className={`w-full py-3 rounded-xl font-black text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 cursor-pointer bg-gradient-to-r from-amber-500 via-orange-500 to-[#FF5C00] text-black hover:opacity-95 shadow-lg shadow-amber-500/20 ${
+                  isPantryAiLoading || (pantryItems.length === 0 && !pantryNotes.trim()) ? 'opacity-50 pointer-events-none' : ''
+                }`}
+              >
+                {isPantryAiLoading ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin" />
+                    <span>Création des recettes par Chef Gemini...</span>
+                  </>
+                ) : (
+                  <>
+                    <Sparkles size={14} className="fill-black/20 animate-pulse" />
+                    <span>Calculer mes recettes ({pantryItems.length} ingrédient{pantryItems.length > 1 ? 's' : ''})</span>
+                  </>
+                )}
+              </button>
+            </div>
+
+            {/* Error Message */}
+            {pantryAiError && (
+              <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl flex items-start gap-2.5 text-red-400 text-xs font-semibold animate-fade-in">
+                <AlertCircle size={14} className="shrink-0 mt-0.5" />
+                <span>{pantryAiError}</span>
+              </div>
+            )}
+
+            {/* Generated Recipes List */}
+            {pantryRecipes.length > 0 && (
+              <div className="space-y-3 animate-fade-in">
+                {pantryAiComment && (
+                  <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-amber-200 text-xs font-semibold flex items-center gap-2">
+                    <Sparkles size={14} className="text-amber-400 shrink-0" />
+                    <span>{pantryAiComment}</span>
+                  </div>
+                )}
+
+                <div className="space-y-2.5">
+                  {pantryRecipes.map((recipe, idx) => {
+                    const isExpanded = expandedRecipeIndex === idx;
+                    return (
+                      <div
+                        key={idx}
+                        className="bg-zinc-900/90 border border-amber-500/20 rounded-2xl p-3.5 space-y-3 transition-all hover:border-amber-500/40"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-[9px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded-full uppercase">
+                                {recipe.category || 'Recette Express'}
+                              </span>
+                              <span className="text-[9px] font-mono font-bold bg-zinc-950 text-zinc-400 border border-white/5 px-2 py-0.5 rounded-full">
+                                ⏱️ {recipe.prepTime}
+                              </span>
+                              <span className="text-[9px] font-mono font-bold bg-zinc-950 text-zinc-400 border border-white/5 px-2 py-0.5 rounded-full">
+                                📊 {recipe.difficulty}
+                              </span>
+                            </div>
+                            <h4 className="text-sm font-black text-white">{recipe.title}</h4>
+                            <p className="text-xs text-zinc-400 leading-relaxed">{recipe.summary}</p>
+                          </div>
+                        </div>
+
+                        {/* Ingredients Breakdown */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[10px] bg-zinc-950/80 p-2.5 rounded-xl border border-white/5 font-mono">
+                          <div>
+                            <span className="text-emerald-400 font-extrabold block mb-1">
+                              ✅ Utilisés du garde-manger :
+                            </span>
+                            <div className="flex flex-wrap gap-1">
+                              {recipe.pantryIngredientsUsed?.map((ing: string, i: number) => (
+                                <span key={i} className="bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 px-1.5 py-0.5 rounded">
+                                  {ing}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                          <div>
+                            <span className="text-zinc-400 font-extrabold block mb-1">
+                              🛒 Condiments / Bases requis :
+                            </span>
+                            <div className="flex flex-wrap gap-1">
+                              {recipe.missingIngredientsNeeded?.map((ing: string, i: number) => (
+                                <span key={i} className="bg-zinc-900 text-zinc-400 border border-white/10 px-1.5 py-0.5 rounded">
+                                  {ing}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Expandable Step-by-Step Instructions */}
+                        <div className="border-t border-white/5 pt-2">
+                          <button
+                            type="button"
+                            onClick={() => setExpandedRecipeIndex(isExpanded ? null : idx)}
+                            className="w-full flex items-center justify-between text-xs font-extrabold text-amber-400 hover:text-amber-300 transition-colors py-1 cursor-pointer font-mono"
+                          >
+                            <span>👩‍🍳 Étapes de préparation ({recipe.instructions?.length || 0})</span>
+                            {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                          </button>
+
+                          {isExpanded && (
+                            <div className="space-y-2 mt-2 pt-2 border-t border-white/5 text-xs text-zinc-300">
+                              <ol className="space-y-1.5 list-decimal list-inside pl-1 leading-relaxed font-sans">
+                                {recipe.instructions?.map((step: string, stepIdx: number) => (
+                                  <li key={stepIdx} className="text-zinc-300">
+                                    <span className="font-semibold">{step}</span>
+                                  </li>
+                                ))}
+                              </ol>
+
+                              {recipe.chefTip && (
+                                <div className="mt-3 p-2.5 bg-amber-500/10 border border-amber-500/20 rounded-xl text-[11px] text-amber-200 flex items-start gap-2">
+                                  <span className="text-sm">💡</span>
+                                  <div>
+                                    <span className="font-bold block text-amber-400 font-mono text-[9px] uppercase">
+                                      Astuce du Chef :
+                                    </span>
+                                    <span>{recipe.chefTip}</span>
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Option to order similar dish if too tired to cook */}
+                              {recipe.matchDishName && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSearchQuery(recipe.matchDishName);
+                                    setActiveTab('classic');
+                                  }}
+                                  className="w-full mt-2 py-2 px-3 rounded-xl bg-zinc-950 hover:bg-zinc-800 border border-white/10 hover:border-[#FF5C00]/40 text-[#FF5C00] text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all cursor-pointer font-sans"
+                                >
+                                  <UtensilsCrossed size={12} />
+                                  <span>Flemme de cuisiner ? Commander "{recipe.matchDishName}" sur FIDFUD</span>
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             )}
           </div>

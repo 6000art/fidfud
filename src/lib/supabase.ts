@@ -19,7 +19,8 @@ let supabaseInstance: any = null;
 
 export const getSupabase = () => {
   if (!isSupabaseConfigured()) {
-    if (process.env.NODE_ENV !== 'production') {
+    const isDev = Boolean(import.meta.env?.DEV || import.meta.env?.MODE === 'development');
+    if (isDev) {
       console.warn(
         '⚠️ Supabase parameters are missing! Fidfud is operating with high-fidelity local Express session sync instead.\n' +
         'To connect your live Supabase database and Auth, add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in your settings.'
@@ -29,7 +30,12 @@ export const getSupabase = () => {
   }
 
   if (!supabaseInstance) {
-    supabaseInstance = createClient(supabaseUrl, supabaseAnonKey);
+    try {
+      supabaseInstance = createClient(supabaseUrl, supabaseAnonKey);
+    } catch (err) {
+      console.warn('[Supabase] Failed to initialize client, continuing without live Supabase:', err);
+      return null;
+    }
   }
   return supabaseInstance;
 };

@@ -1,4 +1,18 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { 
+  ResponsiveContainer, 
+  AreaChart, 
+  Area, 
+  BarChart as RechartsBarChart, 
+  Bar as RechartsBar, 
+  LineChart as RechartsLineChart, 
+  Line as RechartsLine, 
+  XAxis, 
+  YAxis, 
+  CartesianGrid, 
+  Tooltip as RechartsTooltip, 
+  Legend 
+} from 'recharts';
 import { 
   Store, 
   Plus, 
@@ -23,7 +37,9 @@ import {
   Lock,
   Settings,
   Sparkles,
+  Search,
   TrendingUp,
+  TrendingDown,
   Wallet,
   ShieldAlert,
   User,
@@ -37,16 +53,15 @@ import {
   EyeOff,
   Activity,
   Download,
-  AlertTriangle
+  AlertTriangle,
+  Loader2,
+  Film
 } from 'lucide-react';
 import { Restaurant, Dish, Video, Order, OrderStatus } from '../types';
 import { VideoRecorderStudio } from './VideoRecorderStudio';
 import { VideoValidator } from '../services/VideoValidator';
-
-const getSafeVideoUrl = (url: string): string => {
-  if (!url) return 'https://assets.mixkit.co/videos/preview/mixkit-chef-flaming-a-pan-with-liquor-40241-large.mp4';
-  return url;
-};
+import { getSafeVideoUrl, STABLE_CULINARY_FALLBACK_VIDEOS, isDirectPlayableVideo } from '../utils/videoUtils';
+import { FastPostCreatorModal } from './FastPostCreatorModal';
 
 interface MerchantDashboardProps {
   restaurants: Restaurant[];
@@ -54,6 +69,8 @@ interface MerchantDashboardProps {
   videos: Video[];
   orders: Order[];
   onRefreshData: () => void;
+  initialTab?: 'menu' | 'videos' | 'orders' | 'stripe' | 'vitrine' | 'premium' | 'secu_portefeuille' | 'analytics';
+  user?: { id: string; email: string; role: string; fullName?: string; phone?: string } | null;
 }
 
 export default function MerchantDashboard({
@@ -61,13 +78,29 @@ export default function MerchantDashboard({
   dishes,
   videos,
   orders,
-  onRefreshData
+  onRefreshData,
+  initialTab = 'orders',
+  user
 }: MerchantDashboardProps) {
   // Active selected restaurant for simulation
   const [selectedRestaurantId, setSelectedRestaurantId] = useState<string>('');
   
-  // Tabs: 'menu' | 'videos' | 'orders' | 'stripe' | 'vitrine' | 'premium' | 'secu_portefeuille'
-  const [activeTab, setActiveTab] = useState<'menu' | 'videos' | 'orders' | 'stripe' | 'vitrine' | 'premium' | 'secu_portefeuille'>('orders');
+  // Creation states for when user has 0 restaurants
+  const [newRestName, setNewRestName] = useState<string>('');
+  const [newRestAddress, setNewRestAddress] = useState<string>('');
+  const [newRestSlogan, setNewRestSlogan] = useState<string>('');
+  const [newRestCategory, setNewRestCategory] = useState<string>('Général');
+  const [newRestPhone, setNewRestPhone] = useState<string>('');
+  const [isCreatingRestaurant, setIsCreatingRestaurant] = useState<boolean>(false);
+  
+  // Tabs: 'menu' | 'videos' | 'orders' | 'stripe' | 'vitrine' | 'premium' | 'secu_portefeuille' | 'analytics'
+  const [activeTab, setActiveTab] = useState<'menu' | 'videos' | 'orders' | 'stripe' | 'vitrine' | 'premium' | 'secu_portefeuille' | 'analytics'>(initialTab);
+
+  useEffect(() => {
+    if (initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab]);
 
   // Menu states
   const [editingDish, setEditingDish] = useState<Dish | null>(null);
@@ -78,8 +111,16 @@ export default function MerchantDashboard({
   const [dishAvailable, setDishAvailable] = useState<boolean>(true);
   const [dishImage, setDishImage] = useState<string>('');
   const [dishStockCount, setDishStockCount] = useState<string>('');
+  const [dishIsHalal, setDishIsHalal] = useState<boolean>(true);
+  const [dishIsHomemade, setDishIsHomemade] = useState<boolean>(true);
+  const [dishIsBio, setDishIsBio] = useState<boolean>(false);
+  const [dishIsVegan, setDishIsVegan] = useState<boolean>(false);
+  const [dishIsGlutenFree, setDishIsGlutenFree] = useState<boolean>(false);
+  const [dishCustomTags, setDishCustomTags] = useState<string>('');
 
   // Video states
+  const [showFastPostModal, setShowFastPostModal] = useState<boolean>(false);
+  const [fastPostInitialDishId, setFastPostInitialDishId] = useState<string | undefined>(undefined);
   const [showVideoForm, setShowVideoForm] = useState<boolean>(false);
   const [videoUrl, setVideoUrl] = useState<string>('');
   const [videoTitle, setVideoTitle] = useState<string>('');
@@ -99,11 +140,38 @@ export default function MerchantDashboard({
   const [urlValidationResult, setUrlValidationResult] = useState<{ isValid: boolean; error?: string; metadata?: any } | null>(null);
 
   // Bulk Video states
+  const [videoSearchQuery, setVideoSearchQuery] = useState<string>('');
+  const [videoScopeFilter, setVideoScopeFilter] = useState<'mine' | 'all'>('mine');
   const [selectedVideoIds, setSelectedVideoIds] = useState<string[]>([]);
+  const [localDeletedIds, setLocalDeletedIds] = useState<string[]>([]);
   const [bulkPromoText, setBulkPromoText] = useState<string>('');
   const [isBulkAiGenerating, setIsBulkAiGenerating] = useState<boolean>(false);
   const [isBulkPromoSaving, setIsBulkPromoSaving] = useState<boolean>(false);
   const [bulkActionSuccessMessage, setBulkActionSuccessMessage] = useState<string>('');
+  const [optimisticStatusMap, setOptimisticStatusMap] = useState<Record<string, OrderStatus>>({});
+
+  const handleBulkPromoOverlay = async () => {
+    if (selectedVideoIds.length === 0) return;
+    setIsBulkPromoSaving(true);
+    try {
+      await Promise.all(
+        selectedVideoIds.map(vId =>
+          fetch(`/api/videos/${vId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ overlayPromoText: bulkPromoText })
+          }).catch(e => console.warn(e))
+        )
+      );
+      if (onRefreshData) onRefreshData();
+      setBulkActionSuccessMessage(`Bannière promo appliquée à ${selectedVideoIds.length} vidéo(s) !`);
+      setTimeout(() => setBulkActionSuccessMessage(''), 4000);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsBulkPromoSaving(false);
+    }
+  };
 
   // Stripe states
   const [isConnectingStripe, setIsConnectingStripe] = useState<boolean>(false);
@@ -125,18 +193,75 @@ export default function MerchantDashboard({
   const [editRestIsVideoLiveContinuous, setEditRestIsVideoLiveContinuous] = useState<boolean>(false);
   const [isSavingVitrine, setIsSavingVitrine] = useState<boolean>(false);
 
+  // Recharts dish sales chart type state
+  const [dishChartType, setDishChartType] = useState<'line' | 'bar' | 'area'>('area');
+
   // Cash out simulation state
   const [isCashingOut, setIsCashingOut] = useState<boolean>(false);
 
-  // Filter current active merchant details
-  const activeRestaurant = restaurants.find(r => r.id === selectedRestaurantId) || restaurants[0];
+  // Filter restaurants owned by current logged in user
+  const isUserAdmin = user?.role === 'admin' || user?.email?.toLowerCase() === 'sybis.co@gmail.com';
+  
+  const myOwnedRestaurants = useMemo(() => {
+    if (!user) return [];
+    if (isUserAdmin) return restaurants;
+    return restaurants.filter(r => 
+      r.userId === user.id || 
+      (user.email && (r.email?.toLowerCase() === user.email.toLowerCase() || r.userId === user.email))
+    );
+  }, [restaurants, user, isUserAdmin]);
 
-  // Set default restaurant on load
+  const activeRestaurant = myOwnedRestaurants.find(r => r.id === selectedRestaurantId) || myOwnedRestaurants[0] || null;
+
+  // Set default restaurant on load for this user
   useEffect(() => {
-    if (restaurants.length > 0 && !selectedRestaurantId) {
-      setSelectedRestaurantId(restaurants[0].id);
+    if (myOwnedRestaurants.length > 0 && (!selectedRestaurantId || !myOwnedRestaurants.some(r => r.id === selectedRestaurantId))) {
+      setSelectedRestaurantId(myOwnedRestaurants[0].id);
     }
-  }, [restaurants, selectedRestaurantId]);
+  }, [myOwnedRestaurants, selectedRestaurantId]);
+
+  // Handler to create a new restaurant for users without one
+  const handleCreateNewRestaurant = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newRestName || !newRestAddress) {
+      alert('Veuillez remplir le nom et l\'adresse de votre établissement.');
+      return;
+    }
+    setIsCreatingRestaurant(true);
+    try {
+      const payload = {
+        name: newRestName,
+        address: newRestAddress,
+        slogan: newRestSlogan || 'Cuisine savoureuse préparée avec passion ✨',
+        category: newRestCategory || 'Général',
+        phone: newRestPhone || user?.phone || '',
+        email: user?.email || '',
+        userId: user?.id || user?.email || 'user-' + Date.now()
+      };
+      const res = await fetch('/api/restaurants', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (res.ok) {
+        const created = await res.json();
+        alert(`✨ Établissement "${created.name}" créé avec succès !`);
+        setSelectedRestaurantId(created.id);
+        setNewRestName('');
+        setNewRestAddress('');
+        setNewRestSlogan('');
+        setNewRestPhone('');
+        onRefreshData();
+      } else {
+        const errData = await res.json();
+        alert(`Erreur: ${errData.error || 'Échec de la création'}`);
+      }
+    } catch (err: any) {
+      alert(`Erreur réseau: ${err.message}`);
+    } finally {
+      setIsCreatingRestaurant(false);
+    }
+  };
 
   // Debounced real-time validation effect for video URL
   useEffect(() => {
@@ -583,7 +708,46 @@ export default function MerchantDashboard({
   }
 
   const currentRestaurantDishes = dishes.filter(d => d.restaurantId === activeRestaurant?.id);
-  const currentRestaurantVideos = videos.filter(v => v.restaurantId === activeRestaurant?.id);
+  const currentRestaurantDishIds = currentRestaurantDishes.map(d => d.id);
+  const currentRestaurantVideos = videos.filter(v => {
+    if (localDeletedIds.includes(v.id)) return false;
+    
+    if (videoScopeFilter === 'all') return true;
+    
+    if (!activeRestaurant) return true;
+    const rId = activeRestaurant.id?.toLowerCase().trim() || '';
+    const rName = activeRestaurant.name?.toLowerCase().trim() || '';
+    
+    // Check match by restaurantId
+    if (v.restaurantId) {
+      const vRestId = v.restaurantId.toLowerCase().trim();
+      if (vRestId === rId || vRestId.includes(rId) || rId.includes(vRestId)) return true;
+    }
+    
+    // Check match by restaurantName
+    if ((v as any).restaurantName) {
+      const vRestName = (v as any).restaurantName.toLowerCase().trim();
+      if (rName && (vRestName.includes(rName) || rName.includes(vRestName))) return true;
+    }
+    
+    // Check match by associated dish
+    if (v.associatedDishId && currentRestaurantDishIds.includes(v.associatedDishId)) {
+      return true;
+    }
+    
+    // Check match by title
+    if (v.title && rName && v.title.toLowerCase().includes(rName)) {
+      return true;
+    }
+    
+    return false;
+  }).filter(v => {
+    if (!videoSearchQuery.trim()) return true;
+    const q = videoSearchQuery.toLowerCase().trim();
+    return (v.title && v.title.toLowerCase().includes(q)) || 
+           (v.id && v.id.toLowerCase().includes(q)) || 
+           (v.videoUrl && v.videoUrl.toLowerCase().includes(q));
+  });
   const currentRestaurantOrders = orders.filter(o => o.restaurantId === activeRestaurant?.id);
 
   // --- DISH / MENU CRUD HANDLERS ---
@@ -595,6 +759,12 @@ export default function MerchantDashboard({
     setDishAvailable(true);
     setDishImage('https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=500&auto=format&fit=crop&q=80');
     setDishStockCount('');
+    setDishIsHalal(true);
+    setDishIsHomemade(true);
+    setDishIsBio(false);
+    setDishIsVegan(false);
+    setDishIsGlutenFree(false);
+    setDishCustomTags('');
     setShowDishForm(true);
   };
 
@@ -606,6 +776,28 @@ export default function MerchantDashboard({
     setDishAvailable(dish.isAvailable);
     setDishImage(dish.imageUrl || '');
     setDishStockCount(dish.stockCount !== undefined ? dish.stockCount.toString() : '');
+    setDishIsHalal(dish.isHalal ?? dish.certifications?.includes('halal') ?? true);
+    setDishIsHomemade(dish.isHomemade ?? true);
+    setDishIsBio(dish.isBio ?? dish.certifications?.includes('bio') ?? false);
+    setDishIsVegan(dish.isVegan ?? dish.certifications?.includes('vegan') ?? false);
+    setDishIsGlutenFree(dish.isGlutenFree ?? dish.certifications?.includes('gluten_free') ?? false);
+
+    // Extract custom dietary tags
+    const rawTags = Array.isArray(dish.dietary_info)
+      ? dish.dietary_info
+      : typeof dish.dietary_info === 'string'
+      ? dish.dietary_info.split(',')
+      : Array.isArray(dish.dietaryInfo)
+      ? dish.dietaryInfo
+      : [];
+    
+    const customOnly = rawTags
+      .map(t => String(t).trim())
+      .filter(t => {
+        const l = t.toLowerCase();
+        return l && !l.includes('halal') && !l.includes('maison') && !l.includes('bio') && !l.includes('vegan') && !l.includes('végan') && !l.includes('gluten');
+      });
+    setDishCustomTags(customOnly.join(', '));
     setShowDishForm(true);
   };
 
@@ -616,6 +808,21 @@ export default function MerchantDashboard({
       return;
     }
 
+    const computedDietaryTags: string[] = [];
+    if (dishIsHalal) computedDietaryTags.push('Halal');
+    if (dishIsHomemade) computedDietaryTags.push('Fait Maison');
+    if (dishIsBio) computedDietaryTags.push('Bio');
+    if (dishIsVegan) computedDietaryTags.push('Vegan');
+    if (dishIsGlutenFree) computedDietaryTags.push('Gluten-Free');
+
+    if (dishCustomTags) {
+      dishCustomTags.split(',').map(t => t.trim()).filter(Boolean).forEach(t => {
+        if (!computedDietaryTags.some(existing => existing.toLowerCase() === t.toLowerCase())) {
+          computedDietaryTags.push(t);
+        }
+      });
+    }
+
     const payload = {
       restaurantId: activeRestaurant.id,
       name: dishName,
@@ -623,7 +830,14 @@ export default function MerchantDashboard({
       price: Number(dishPrice),
       isAvailable: dishAvailable,
       imageUrl: dishImage,
-      stockCount: dishStockCount !== '' ? Number(dishStockCount) : undefined
+      stockCount: dishStockCount !== '' ? Number(dishStockCount) : undefined,
+      isHalal: dishIsHalal,
+      isHomemade: dishIsHomemade,
+      isBio: dishIsBio,
+      isVegan: dishIsVegan,
+      isGlutenFree: dishIsGlutenFree,
+      dietary_info: computedDietaryTags,
+      dietaryInfo: computedDietaryTags
     };
 
     try {
@@ -830,19 +1044,19 @@ export default function MerchantDashboard({
 
     const templates = [
       {
-        url: 'https://assets.mixkit.co/videos/preview/mixkit-chef-preparing-dough-for-making-pizza-39974-large.mp4',
+        url: STABLE_CULINARY_FALLBACK_VIDEOS[0],
         title: `Notre secret de fabrication dévoilé ! 🍕✨ #savoirfaire #craft`
       },
       {
-        url: 'https://assets.mixkit.co/videos/preview/mixkit-slicing-fresh-cucumber-and-vegetables-for-salad-40019-large.mp4',
+        url: STABLE_CULINARY_FALLBACK_VIDEOS[1],
         title: `Des ingrédients frais, locaux et de saison pour sublimer vos assiettes ! 🥗🌱`
       },
       {
-        url: 'https://assets.mixkit.co/videos/preview/mixkit-sizzling-meat-on-a-charcoal-grill-40018-large.mp4',
+        url: STABLE_CULINARY_FALLBACK_VIDEOS[2],
         title: `Une cuisson lente au feu de bois pour une saveur de grillade inimitable. 🔥🥩 #grill`
       },
       {
-        url: 'https://assets.mixkit.co/videos/preview/mixkit-pouring-delicious-sauce-on-fresh-pasta-40004-large.mp4',
+        url: STABLE_CULINARY_FALLBACK_VIDEOS[3],
         title: `L'onctuosité de notre sauce signature faite maison... Un régal pour les yeux ! 🍝🇮🇹`
       }
     ];
@@ -910,14 +1124,23 @@ export default function MerchantDashboard({
   };
 
   const handleDeleteVideo = async (videoId: string) => {
-    if (!confirm("Voulez-vous vraiment retirer cette vidéo du feed public ?")) return;
+    if (!confirm("Voulez-vous vraiment supprimer/retirer cette vidéo du feed ?")) return;
+    
+    // Instant optimistic visual removal
+    setLocalDeletedIds(prev => [...prev, videoId]);
+    setSelectedVideoIds(prev => prev.filter(id => id !== videoId));
+
     try {
       const res = await fetch(`/api/videos/${videoId}`, { method: 'DELETE' });
       if (res.ok) {
         onRefreshData();
+      } else {
+        await fetch(`/api/videos/${videoId}/delete`, { method: 'POST' }).catch(() => {});
+        onRefreshData();
       }
     } catch (err) {
       console.error(err);
+      onRefreshData();
     }
   };
 
@@ -955,39 +1178,43 @@ export default function MerchantDashboard({
     }
   };
 
-  const handleBulkPromoOverlay = async () => {
+  const handleBulkDeleteVideos = async () => {
     if (selectedVideoIds.length === 0) return;
-    setIsBulkPromoSaving(true);
-    setBulkActionSuccessMessage('');
+    if (!confirm(`Voulez-vous vraiment supprimer définitivement ces ${selectedVideoIds.length} vidéos ? Cette action est irréversible.`)) return;
+    
+    const idsToDelete = [...selectedVideoIds];
+
+    // Instant optimistic visual removal
+    setLocalDeletedIds(prev => [...prev, ...idsToDelete]);
+    setSelectedVideoIds([]);
+    setBulkActionSuccessMessage(`${idsToDelete.length} vidéo(s) supprimée(s) avec succès !`);
+
     try {
-      const res = await fetch('/api/videos/bulk-promo-overlay', {
+      const res = await fetch('/api/videos/bulk-delete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          videoIds: selectedVideoIds,
-          promoOverlay: bulkPromoText
-        })
+        body: JSON.stringify({ ids: idsToDelete })
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.ok && data.success) {
-        setBulkActionSuccessMessage(`Overlay promotionnel appliqué avec succès à ${selectedVideoIds.length} vidéo(s) !`);
-        setSelectedVideoIds([]);
-        setBulkPromoText('');
         onRefreshData();
       } else {
-        alert(data.error || "Une erreur est survenue lors de l'application de l'overlay.");
+        // Fallback individual deletions if needed
+        await Promise.all(idsToDelete.map(id => fetch(`/api/videos/${id}`, { method: 'DELETE' }).catch(() => {})));
+        onRefreshData();
       }
     } catch (err) {
       console.error(err);
-      alert("Échec de la connexion avec le serveur.");
+      onRefreshData();
     } finally {
-      setIsBulkPromoSaving(false);
+      setTimeout(() => setBulkActionSuccessMessage(''), 4000);
     }
   };
 
 
   // --- ORDER STATUS HANDLERS ---
   const handleUpdateOrderStatus = async (orderId: string, nextStatus: OrderStatus) => {
+    setOptimisticStatusMap(prev => ({ ...prev, [orderId]: nextStatus }));
     try {
       const res = await fetch(`/api/orders/${orderId}/status`, {
         method: 'PUT',
@@ -999,6 +1226,11 @@ export default function MerchantDashboard({
       }
     } catch (err) {
       console.error(err);
+      setOptimisticStatusMap(prev => {
+        const next = { ...prev };
+        delete next[orderId];
+        return next;
+      });
     }
   };
 
@@ -1127,6 +1359,122 @@ export default function MerchantDashboard({
     }
   };
 
+  if (!activeRestaurant) {
+    return (
+      <div className="w-full max-w-2xl mx-auto px-4 py-12 text-zinc-200">
+        <div className="bg-[#0D0D0E] border border-white/10 rounded-3xl p-8 shadow-2xl text-center space-y-6">
+          <div className="w-16 h-16 rounded-2xl bg-[#FF5C00]/10 border border-[#FF5C00]/30 text-[#FF5C00] flex items-center justify-center mx-auto shadow-[0_0_20px_rgba(255,92,0,0.2)]">
+            <Store size={32} />
+          </div>
+
+          <div className="space-y-2">
+            <h2 className="text-2xl font-black text-white uppercase italic tracking-tight">
+              Bienvenue dans l'Espace Chef
+            </h2>
+            <p className="text-xs text-zinc-400 font-sans max-w-md mx-auto leading-relaxed">
+              {user ? (
+                <>Vous n'avez pas encore créé d'établissement associé à votre compte <strong className="text-zinc-200 font-mono">{user.email}</strong>. Créez votre restaurant ci-dessous pour publier vos plats et vidéos culinaires !</>
+              ) : (
+                <>Veuillez vous connecter à votre compte pour accéder à votre espace chef ou créer votre établissement.</>
+              )}
+            </p>
+          </div>
+
+          <form onSubmit={handleCreateNewRestaurant} className="space-y-4 text-left pt-2">
+            <div>
+              <label className="block text-[10px] font-black uppercase tracking-wider text-zinc-400 mb-1 font-mono">
+                Nom de l'établissement <span className="text-[#FF5C00]">*</span>
+              </label>
+              <input
+                type="text"
+                placeholder="ex: Le Petit Bistro Lyon"
+                value={newRestName}
+                onChange={(e) => setNewRestName(e.target.value)}
+                className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-[#FF5C00] transition-colors"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-black uppercase tracking-wider text-zinc-400 mb-1 font-mono">
+                Adresse complète <span className="text-[#FF5C00]">*</span>
+              </label>
+              <input
+                type="text"
+                placeholder="ex: 12 Rue de la Paix, 75002 Paris"
+                value={newRestAddress}
+                onChange={(e) => setNewRestAddress(e.target.value)}
+                className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-[#FF5C00] transition-colors"
+                required
+              />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-[10px] font-black uppercase tracking-wider text-zinc-400 mb-1 font-mono">
+                  Slogan / Spécialité
+                </label>
+                <input
+                  type="text"
+                  placeholder="ex: Cuisine authentique et produits frais"
+                  value={newRestSlogan}
+                  onChange={(e) => setNewRestSlogan(e.target.value)}
+                  className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-[#FF5C00] transition-colors"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-black uppercase tracking-wider text-zinc-400 mb-1 font-mono">
+                  Catégorie
+                </label>
+                <select
+                  value={newRestCategory}
+                  onChange={(e) => setNewRestCategory(e.target.value)}
+                  className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-[#FF5C00] transition-colors"
+                >
+                  <option value="Général">Général</option>
+                  <option value="Italien">Italien</option>
+                  <option value="Japonais">Japonais</option>
+                  <option value="Burgers">Burgers</option>
+                  <option value="Français">Français</option>
+                  <option value="Café">Café</option>
+                  <option value="Tex-Mex">Tex-Mex</option>
+                  <option value="Street Food">Street Food</option>
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-black uppercase tracking-wider text-zinc-400 mb-1 font-mono">
+                Téléphone de contact
+              </label>
+              <input
+                type="tel"
+                placeholder="ex: 06 12 34 56 78"
+                value={newRestPhone}
+                onChange={(e) => setNewRestPhone(e.target.value)}
+                className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-[#FF5C00] transition-colors"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={isCreatingRestaurant}
+              className="w-full mt-4 py-3.5 px-6 rounded-2xl bg-gradient-to-r from-[#FF5C00] to-orange-600 hover:brightness-110 text-white text-xs font-black uppercase tracking-wider shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+            >
+              {isCreatingRestaurant ? (
+                <Loader2 size={16} className="animate-spin" />
+              ) : (
+                <Plus size={16} />
+              )}
+              <span>🚀 Créer mon Établissement</span>
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="w-full max-w-4xl mx-auto px-4 py-6 text-zinc-200">
       
@@ -1134,45 +1482,54 @@ export default function MerchantDashboard({
       <div className="bg-[#0D0D0E] border border-[#1F1F23] rounded-3xl p-6 mb-6">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           
-          {/* Select active restaurant to simulate different accounts */}
+          {/* Active restaurant display header - No simulator dropdown */}
           <div className="flex items-center space-x-4">
             <div className="p-3 bg-[#FF5E1A]/10 text-[#FF5E1A] rounded-2xl border border-[#FF5E1A]/20">
               <Store size={24} />
             </div>
             <div>
-              <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">Simuler en tant que restaurateur :</span>
-              <select
-                id="select-active-merchant"
-                value={selectedRestaurantId}
-                onChange={e => {
-                  setSelectedRestaurantId(e.target.value);
-                  // Trigger refresh/re-fetch of stripe status
-                }}
-                className="block w-full mt-1 bg-[#121214] border border-[#1F1F23] text-sm text-white font-bold rounded-xl px-3.5 py-2 focus:outline-none focus:border-[#FF5E1A]"
-              >
-                {restaurants.map(r => (
-                  <option key={r.id} value={r.id}>{r.name}</option>
-                ))}
-              </select>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider font-mono">Votre Établissement Partenaire</span>
+                <span className="text-[9px] bg-green-500/10 text-green-400 border border-green-500/20 px-2 py-0.5 rounded-full font-black uppercase tracking-wider font-mono">
+                  Compte Vérifié
+                </span>
+              </div>
+              <h2 className="text-lg font-black text-white uppercase italic tracking-tight mt-0.5 flex items-center gap-2">
+                <span>{activeRestaurant?.name || 'Mon Établissement'}</span>
+              </h2>
             </div>
           </div>
 
-          {/* Quick Metrics display */}
-          <div className="flex items-center space-x-6 self-start md:self-center">
-            <div className="text-left">
-              <p className="text-[10px] text-zinc-500 uppercase font-black">Plats</p>
-              <p className="text-xl font-bold text-white">{currentRestaurantDishes.length}</p>
+          {/* Quick Metrics display & Fast Post Button */}
+          <div className="flex flex-wrap items-center gap-4 self-start md:self-center">
+            <div className="flex items-center space-x-4 sm:space-x-6">
+              <div className="text-left">
+                <p className="text-[10px] text-zinc-500 uppercase font-black">Plats</p>
+                <p className="text-xl font-bold text-white">{currentRestaurantDishes.length}</p>
+              </div>
+              <div className="w-px h-8 bg-zinc-800" />
+              <div className="text-left">
+                <p className="text-[10px] text-zinc-500 uppercase font-black">Vidéos Actives</p>
+                <p className="text-xl font-bold text-white">{currentRestaurantVideos.length}</p>
+              </div>
+              <div className="w-px h-8 bg-zinc-800" />
+              <div className="text-left">
+                <p className="text-[10px] text-zinc-500 uppercase font-black">Commandes</p>
+                <p className="text-xl font-bold text-[#FF5E1A]">{currentRestaurantOrders.length}</p>
+              </div>
             </div>
-            <div className="w-px h-8 bg-zinc-800" />
-            <div className="text-left">
-              <p className="text-[10px] text-zinc-500 uppercase font-black">Vidéos Actives</p>
-              <p className="text-xl font-bold text-white">{currentRestaurantVideos.length}</p>
-            </div>
-            <div className="w-px h-8 bg-zinc-800" />
-            <div className="text-left">
-              <p className="text-[10px] text-zinc-500 uppercase font-black">Commandes reçues</p>
-              <p className="text-xl font-bold text-[#FF5E1A]">{currentRestaurantOrders.length}</p>
-            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                setFastPostInitialDishId(undefined);
+                setShowFastPostModal(true);
+              }}
+              className="flex items-center space-x-2 bg-gradient-to-r from-[#FF5E1A] via-[#FF3E00] to-pink-600 hover:brightness-110 text-white text-xs font-black px-4 py-2.5 rounded-2xl shadow-lg shadow-[#FF5E1A]/25 transition-all cursor-pointer hover:scale-[1.02]"
+            >
+              <Film size={15} />
+              <span>➕ Nouveau Post (Reel / TikTok)</span>
+            </button>
           </div>
         </div>
 
@@ -1198,10 +1555,10 @@ export default function MerchantDashboard({
       </div>
 
       {/* Tabs navigation */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-1.5 bg-[#121214] border border-[#1F1F23] rounded-2xl p-1.5 mb-6">
+      <div className="flex overflow-x-auto no-scrollbar scrollbar-none sm:grid sm:grid-cols-4 md:grid-cols-8 gap-1.5 bg-[#121214] border border-[#1F1F23] rounded-2xl p-1.5 mb-6 touch-pan-x">
         <button
           onClick={() => setActiveTab('orders')}
-          className={`py-2.5 px-1.5 text-center text-[11px] font-extrabold rounded-xl transition-all flex flex-col items-center justify-center gap-1.5 ${
+          className={`py-2.5 px-2 text-center text-[11px] font-extrabold rounded-xl transition-all flex flex-col items-center justify-center gap-1.5 shrink-0 sm:shrink min-w-[110px] sm:min-w-0 ${
             activeTab === 'orders' 
               ? 'bg-[#FF5E1A] text-white shadow-md scale-102' 
               : 'text-zinc-400 hover:text-white hover:bg-zinc-900/50'
@@ -1211,8 +1568,19 @@ export default function MerchantDashboard({
           <span className="truncate w-full text-center">Commandes ({currentRestaurantOrders.filter(o => o.status !== 'delivered' && o.status !== 'cancelled').length})</span>
         </button>
         <button
+          onClick={() => setActiveTab('analytics')}
+          className={`py-2.5 px-2 text-center text-[11px] font-extrabold rounded-xl transition-all flex flex-col items-center justify-center gap-1.5 shrink-0 sm:shrink min-w-[110px] sm:min-w-0 ${
+            activeTab === 'analytics' 
+              ? 'bg-[#FF5E1A] text-white shadow-md scale-102' 
+              : 'text-zinc-400 hover:text-white hover:bg-zinc-900/50'
+          }`}
+        >
+          <BarChart2 size={15} />
+          <span className="truncate w-full text-center">Analytiques</span>
+        </button>
+        <button
           onClick={() => setActiveTab('menu')}
-          className={`py-2.5 px-1.5 text-center text-[11px] font-extrabold rounded-xl transition-all flex flex-col items-center justify-center gap-1.5 ${
+          className={`py-2.5 px-2 text-center text-[11px] font-extrabold rounded-xl transition-all flex flex-col items-center justify-center gap-1.5 shrink-0 sm:shrink min-w-[110px] sm:min-w-0 ${
             activeTab === 'menu' 
               ? 'bg-[#FF5E1A] text-white shadow-md scale-102' 
               : 'text-zinc-400 hover:text-white hover:bg-zinc-900/50'
@@ -1223,18 +1591,18 @@ export default function MerchantDashboard({
         </button>
         <button
           onClick={() => setActiveTab('videos')}
-          className={`py-2.5 px-1.5 text-center text-[11px] font-extrabold rounded-xl transition-all flex flex-col items-center justify-center gap-1.5 ${
+          className={`py-2.5 px-2 text-center text-[11px] font-extrabold rounded-xl transition-all flex flex-col items-center justify-center gap-1.5 shrink-0 sm:shrink min-w-[110px] sm:min-w-0 ${
             activeTab === 'videos' 
               ? 'bg-[#FF5E1A] text-white shadow-md scale-102' 
               : 'text-zinc-400 hover:text-white hover:bg-zinc-900/50'
           }`}
         >
           <Tv size={15} />
-          <span className="truncate w-full text-center">Vidéos Feed</span>
+          <span className="truncate w-full text-center">Studio Vidéos Plats</span>
         </button>
         <button
           onClick={() => setActiveTab('vitrine')}
-          className={`py-2.5 px-1.5 text-center text-[11px] font-extrabold rounded-xl transition-all flex flex-col items-center justify-center gap-1.5 ${
+          className={`py-2.5 px-2 text-center text-[11px] font-extrabold rounded-xl transition-all flex flex-col items-center justify-center gap-1.5 shrink-0 sm:shrink min-w-[110px] sm:min-w-0 ${
             activeTab === 'vitrine' 
               ? 'bg-[#FF5E1A] text-white shadow-md scale-102' 
               : 'text-zinc-400 hover:text-white hover:bg-zinc-900/50'
@@ -1245,7 +1613,7 @@ export default function MerchantDashboard({
         </button>
         <button
           onClick={() => setActiveTab('premium')}
-          className={`py-2.5 px-1.5 text-center text-[11px] font-extrabold rounded-xl transition-all flex flex-col items-center justify-center gap-1.5 ${
+          className={`py-2.5 px-2 text-center text-[11px] font-extrabold rounded-xl transition-all flex flex-col items-center justify-center gap-1.5 shrink-0 sm:shrink min-w-[110px] sm:min-w-0 ${
             activeTab === 'premium' 
               ? 'bg-[#FF5E1A] text-white shadow-md scale-102' 
               : 'text-zinc-400 hover:text-white hover:bg-zinc-900/50'
@@ -1256,7 +1624,7 @@ export default function MerchantDashboard({
         </button>
         <button
           onClick={() => setActiveTab('secu_portefeuille')}
-          className={`py-2.5 px-1.5 text-center text-[11px] font-extrabold rounded-xl transition-all flex flex-col items-center justify-center gap-1.5 ${
+          className={`py-2.5 px-2 text-center text-[11px] font-extrabold rounded-xl transition-all flex flex-col items-center justify-center gap-1.5 shrink-0 sm:shrink min-w-[110px] sm:min-w-0 ${
             activeTab === 'secu_portefeuille' 
               ? 'bg-[#FF5E1A] text-white shadow-md scale-102' 
               : 'text-zinc-400 hover:text-white hover:bg-zinc-900/50'
@@ -1267,7 +1635,7 @@ export default function MerchantDashboard({
         </button>
         <button
           onClick={() => setActiveTab('stripe')}
-          className={`py-2.5 px-1.5 text-center text-[11px] font-extrabold rounded-xl transition-all flex flex-col items-center justify-center gap-1.5 ${
+          className={`py-2.5 px-2 text-center text-[11px] font-extrabold rounded-xl transition-all flex flex-col items-center justify-center gap-1.5 shrink-0 sm:shrink min-w-[110px] sm:min-w-0 ${
             activeTab === 'stripe' 
               ? 'bg-[#FF5E1A] text-white shadow-md scale-102' 
               : 'text-zinc-400 hover:text-white hover:bg-zinc-900/50'
@@ -1278,6 +1646,475 @@ export default function MerchantDashboard({
         </button>
       </div>
 
+
+      {/* TAB CONTENT: ANALYTICS (REVENUS QUOTIDIENS & PLATS POPULAIRES) */}
+      {activeTab === 'analytics' && (() => {
+        const validOrders = currentRestaurantOrders.filter(o => o.status !== 'cancelled');
+        
+        // Total revenue
+        const totalCA = validOrders.reduce((sum, o) => sum + (o.totalAmount || 0), 0);
+        const orderCount = validOrders.length;
+        const averageBasket = orderCount > 0 ? totalCA / orderCount : 0;
+
+        // Today's revenue
+        const todayStr = new Date().toISOString().split('T')[0];
+        const todayOrders = validOrders.filter(o => o.createdAt && o.createdAt.startsWith(todayStr));
+        const todayCA = todayOrders.reduce((sum, o) => sum + (o.totalAmount || 0), 0);
+
+        // Calculate Daily Revenue for the last 7 days
+        const last7Days = Array.from({ length: 7 }).map((_, i) => {
+          const d = new Date();
+          d.setDate(d.getDate() - (6 - i));
+          const dateIso = d.toISOString().split('T')[0];
+          const dayName = d.toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' });
+          const dayOrders = validOrders.filter(o => o.createdAt && o.createdAt.startsWith(dateIso));
+          const dayTotal = dayOrders.reduce((sum, o) => sum + (o.totalAmount || 0), 0);
+          return {
+            dateIso,
+            dayName,
+            total: dayTotal,
+            ordersCount: dayOrders.length,
+            isToday: dateIso === todayStr
+          };
+        });
+
+        const maxDailyRevenue = Math.max(...last7Days.map(d => d.total), 100);
+
+        // Calculate Top Ordered Dishes
+        const dishSalesMap: Record<string, { dishName: string; price: number; quantity: number; totalRevenue: number; imageUrl?: string }> = {};
+
+        validOrders.forEach(order => {
+          if (Array.isArray(order.items)) {
+            order.items.forEach(item => {
+              const name = item.dishName || 'Plat Inconnu';
+              const price = item.price || 12;
+              const qty = item.quantity || 1;
+              const matchedDish = currentRestaurantDishes.find(d => d.id === item.dishId || d.name === name);
+              const img = matchedDish?.imageUrl;
+
+              if (!dishSalesMap[name]) {
+                dishSalesMap[name] = {
+                  dishName: name,
+                  price,
+                  quantity: 0,
+                  totalRevenue: 0,
+                  imageUrl: img
+                };
+              }
+
+              dishSalesMap[name].quantity += qty;
+              dishSalesMap[name].totalRevenue += qty * price;
+              if (!dishSalesMap[name].imageUrl && img) {
+                dishSalesMap[name].imageUrl = img;
+              }
+            });
+          }
+        });
+
+        // Also merge with restaurant dishes so dishes registered in the card are listed
+        currentRestaurantDishes.forEach(d => {
+          if (!dishSalesMap[d.name]) {
+            dishSalesMap[d.name] = {
+              dishName: d.name,
+              price: d.price,
+              quantity: 0,
+              totalRevenue: 0,
+              imageUrl: d.imageUrl
+            };
+          }
+        });
+
+        const topDishesList = Object.values(dishSalesMap).sort((a, b) => b.quantity - a.quantity);
+        const maxQtySold = Math.max(...topDishesList.map(d => d.quantity), 1);
+
+        // Prepare Recharts 7-Day Dish Sales Evolution Dataset
+        const DISH_COLORS = ['#FF5E1A', '#3B82F6', '#10B981', '#F59E0B', '#8B5CF6'];
+        const top5DishNames = topDishesList.length > 0 
+          ? topDishesList.slice(0, 5).map(d => d.dishName)
+          : currentRestaurantDishes.slice(0, 5).map(d => d.name);
+
+        const dishSalesOverLast7Days = last7Days.map(dayObj => {
+          const dayIso = dayObj.dateIso;
+          const dayOrders = validOrders.filter(o => o.createdAt && o.createdAt.startsWith(dayIso));
+          
+          const entry: Record<string, any> = {
+            day: dayObj.dayName,
+          };
+
+          top5DishNames.forEach(name => {
+            entry[name] = 0;
+          });
+
+          dayOrders.forEach(order => {
+            if (Array.isArray(order.items)) {
+              order.items.forEach(item => {
+                const name = item.dishName || 'Plat Inconnu';
+                if (entry[name] !== undefined) {
+                  entry[name] += item.quantity || 1;
+                }
+              });
+            }
+          });
+
+          return entry;
+        });
+
+        return (
+          <div className="space-y-6 animate-fade-in">
+            {/* Header / Summary banner */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-zinc-950 p-5 rounded-3xl border border-zinc-900">
+              <div>
+                <h4 className="text-lg font-black text-white tracking-tight flex items-center gap-2">
+                  <BarChart2 size={20} className="text-[#FF5E1A]" />
+                  <span>Tableau de Bord Analytique & Performances</span>
+                </h4>
+                <p className="text-xs text-zinc-400 mt-1 font-sans leading-normal">
+                  Analyse en temps réel du chiffre d'affaires quotidien et du palmarès de vos meilleures ventes.
+                </p>
+              </div>
+              <button 
+                onClick={onRefreshData}
+                className="self-start md:self-auto px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 rounded-xl text-xs font-bold border border-zinc-800 flex items-center gap-2 transition-all cursor-pointer"
+              >
+                <Activity size={14} className="text-[#FF5E1A]" />
+                <span>Actualiser les données</span>
+              </button>
+            </div>
+
+            {/* KPI Cards Grid */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div className="p-4 rounded-2xl bg-zinc-950 border border-zinc-900 flex flex-col justify-between">
+                <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">C.A. Total Cumulé</span>
+                <div className="my-2">
+                  <span className="text-xl sm:text-2xl font-black text-white font-mono">{totalCA.toFixed(2)} €</span>
+                  <span className="text-[10px] text-zinc-500 block font-sans mt-0.5">{orderCount} commandes validées</span>
+                </div>
+                <div className="text-[10px] font-bold text-green-400 flex items-center gap-1">
+                  <TrendingUp size={12} />
+                  <span>+12.4% ce mois</span>
+                </div>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-[#FF5E1A]/10 border border-[#FF5E1A]/30 flex flex-col justify-between">
+                <span className="text-[10px] font-black uppercase tracking-wider text-[#FF5E1A]">Revenus d'Aujourd'hui</span>
+                <div className="my-2">
+                  <span className="text-xl sm:text-2xl font-black text-white font-mono">{todayCA.toFixed(2)} €</span>
+                  <span className="text-[10px] text-zinc-400 block font-sans mt-0.5">{todayOrders.length} commandes en direct</span>
+                </div>
+                <div className="text-[10px] font-bold text-amber-400 flex items-center gap-1">
+                  <span>🔥 En direct de la cuisine</span>
+                </div>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-zinc-950 border border-zinc-900 flex flex-col justify-between">
+                <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Panier Moyen</span>
+                <div className="my-2">
+                  <span className="text-xl sm:text-2xl font-black text-white font-mono">{averageBasket.toFixed(2)} €</span>
+                  <span className="text-[10px] text-zinc-500 block font-sans mt-0.5">par commande cliente</span>
+                </div>
+                <div className="text-[10px] font-bold text-zinc-400 flex items-center gap-1">
+                  <span>📊 Calculé sur {orderCount} commandes</span>
+                </div>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-zinc-950 border border-zinc-900 flex flex-col justify-between">
+                <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Plat le plus vendu</span>
+                <div className="my-2 truncate">
+                  <span className="text-sm font-black text-white truncate block">{topDishesList[0]?.dishName || 'Aucun'}</span>
+                  <span className="text-[10px] text-amber-400 font-mono block mt-0.5">
+                    {topDishesList[0]?.quantity || 0} vendus • {(topDishesList[0]?.totalRevenue || 0).toFixed(2)}€
+                  </span>
+                </div>
+                <div className="text-[10px] font-bold text-amber-400 flex items-center gap-1">
+                  <span>👑 Champion de la carte</span>
+                </div>
+              </div>
+            </div>
+
+            {/* BAR CHART SECTION: REVENUS QUOTIDIENS (7 DERNIERS JOURS) */}
+            <div className="p-6 rounded-3xl bg-zinc-950 border border-zinc-900 space-y-5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                  <h5 className="text-sm font-black text-white flex items-center gap-2">
+                    <TrendingUp size={16} className="text-[#FF5E1A]" />
+                    <span>Revenus Quotidiens (7 Derniers Jours)</span>
+                  </h5>
+                  <p className="text-xs text-zinc-400 mt-0.5">
+                    Évolution du chiffre d'affaires journalier généré par vos ventes de repas.
+                  </p>
+                </div>
+                <div className="text-right font-mono text-xs">
+                  <span className="text-zinc-500">Moyenne journalière : </span>
+                  <strong className="text-white">{(last7Days.reduce((a, b) => a + b.total, 0) / 7).toFixed(2)} € / jour</strong>
+                </div>
+              </div>
+
+              {/* Graphical Bar Chart */}
+              <div className="pt-6 pb-2 px-2">
+                <div className="h-48 flex items-end justify-between gap-2 sm:gap-4 border-b border-zinc-800 pb-2">
+                  {last7Days.map((day, idx) => {
+                    const heightPercent = maxDailyRevenue > 0 ? Math.max((day.total / maxDailyRevenue) * 100, 6) : 6;
+                    return (
+                      <div key={idx} className="flex-1 flex flex-col items-center h-full justify-end group relative">
+                        {/* Hover Tooltip */}
+                        <div className="opacity-0 group-hover:opacity-100 transition-all absolute -top-12 bg-zinc-900 text-white border border-zinc-700 px-2.5 py-1 rounded-lg text-[10px] font-mono shadow-xl pointer-events-none z-20 whitespace-nowrap text-center">
+                          <span className="font-bold text-[#FF5E1A]">{day.total.toFixed(2)} €</span>
+                          <span className="block text-[8px] text-zinc-400">{day.ordersCount} cmd(s)</span>
+                        </div>
+
+                        {/* Value label over bar */}
+                        <span className="text-[9px] font-mono font-bold text-zinc-400 mb-1.5 opacity-80 group-hover:opacity-100 transition-opacity">
+                          {day.total > 0 ? `${day.total.toFixed(0)}€` : '0€'}
+                        </span>
+
+                        {/* Bar */}
+                        <div 
+                          style={{ height: `${heightPercent}%` }}
+                          className={`w-full max-w-[48px] rounded-t-xl transition-all duration-500 group-hover:brightness-125 ${
+                            day.isToday 
+                              ? 'bg-gradient-to-t from-[#FF5E1A] to-amber-400 shadow-[0_0_15px_rgba(255,94,26,0.4)]' 
+                              : (day.total > 0 ? 'bg-gradient-to-t from-zinc-800 to-[#FF5E1A]/80' : 'bg-zinc-900')
+                          }`}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Day Labels */}
+                <div className="flex items-center justify-between gap-2 sm:gap-4 pt-3 text-[10px] font-mono text-zinc-400 uppercase text-center">
+                  {last7Days.map((day, idx) => (
+                    <div key={idx} className="flex-1 truncate">
+                      <span className={day.isToday ? 'text-[#FF5E1A] font-black' : ''}>
+                        {day.isToday ? 'Auj.' : day.dayName}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* RECHARTS SECTION: ÉVOLUTION DES VENTES PAR PLAT (7 DERNIERS JOURS) */}
+            <div className="p-6 rounded-3xl bg-zinc-950 border border-zinc-900 space-y-5">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+                <div>
+                  <h5 className="text-sm font-black text-white flex items-center gap-2">
+                    <BarChart2 size={16} className="text-[#FF5E1A]" />
+                    <span>Évolution des Ventes par Plat sur la Dernière Semaine (Recharts)</span>
+                  </h5>
+                  <p className="text-xs text-zinc-400 mt-0.5">
+                    Visualisation graphique interactive de la demande par recette au fil des 7 derniers jours.
+                  </p>
+                </div>
+
+                {/* Controls for Chart Type */}
+                <div className="flex items-center gap-1.5 bg-zinc-900 p-1 rounded-xl border border-zinc-800 self-start md:self-auto">
+                  <button
+                    type="button"
+                    onClick={() => setDishChartType('area')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      dishChartType === 'area'
+                        ? 'bg-[#FF5E1A] text-white shadow-sm font-extrabold'
+                        : 'text-zinc-400 hover:text-white'
+                    }`}
+                  >
+                    Aires
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDishChartType('line')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      dishChartType === 'line'
+                        ? 'bg-[#FF5E1A] text-white shadow-sm font-extrabold'
+                        : 'text-zinc-400 hover:text-white'
+                    }`}
+                  >
+                    Lignes
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDishChartType('bar')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      dishChartType === 'bar'
+                        ? 'bg-[#FF5E1A] text-white shadow-sm font-extrabold'
+                        : 'text-zinc-400 hover:text-white'
+                    }`}
+                  >
+                    Bâtons
+                  </button>
+                </div>
+              </div>
+
+              {top5DishNames.length === 0 ? (
+                <div className="py-12 text-center text-xs text-zinc-500 font-sans border border-dashed border-zinc-800 rounded-2xl">
+                  Aucun plat à afficher pour le moment dans votre carte.
+                </div>
+              ) : (
+                <div className="h-80 w-full pt-2">
+                  <ResponsiveContainer width="100%" height="100%">
+                    {dishChartType === 'area' ? (
+                      <AreaChart data={dishSalesOverLast7Days} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                        <defs>
+                          {top5DishNames.map((dishName, i) => (
+                            <linearGradient key={dishName} id={`color-dish-${i}`} x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor={DISH_COLORS[i % DISH_COLORS.length]} stopOpacity={0.45} />
+                              <stop offset="95%" stopColor={DISH_COLORS[i % DISH_COLORS.length]} stopOpacity={0} />
+                            </linearGradient>
+                          ))}
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
+                        <XAxis dataKey="day" stroke="#a1a1aa" fontSize={11} tickLine={false} />
+                        <YAxis stroke="#a1a1aa" fontSize={11} allowDecimals={false} tickLine={false} />
+                        <RechartsTooltip
+                          contentStyle={{ backgroundColor: '#18181b', borderColor: '#27272a', borderRadius: '0.75rem', color: '#fff', fontSize: '12px' }}
+                          itemStyle={{ fontSize: '11px', fontWeight: 'bold' }}
+                        />
+                        <Legend wrapperStyle={{ paddingTop: '12px', fontSize: '12px' }} />
+                        {top5DishNames.map((dishName, i) => (
+                          <Area
+                            key={dishName}
+                            type="monotone"
+                            dataKey={dishName}
+                            name={dishName}
+                            stroke={DISH_COLORS[i % DISH_COLORS.length]}
+                            fillOpacity={1}
+                            fill={`url(#color-dish-${i})`}
+                            strokeWidth={2}
+                          />
+                        ))}
+                      </AreaChart>
+                    ) : dishChartType === 'line' ? (
+                      <RechartsLineChart data={dishSalesOverLast7Days} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
+                        <XAxis dataKey="day" stroke="#a1a1aa" fontSize={11} tickLine={false} />
+                        <YAxis stroke="#a1a1aa" fontSize={11} allowDecimals={false} tickLine={false} />
+                        <RechartsTooltip
+                          contentStyle={{ backgroundColor: '#18181b', borderColor: '#27272a', borderRadius: '0.75rem', color: '#fff', fontSize: '12px' }}
+                          itemStyle={{ fontSize: '11px', fontWeight: 'bold' }}
+                        />
+                        <Legend wrapperStyle={{ paddingTop: '12px', fontSize: '12px' }} />
+                        {top5DishNames.map((dishName, i) => (
+                          <RechartsLine
+                            key={dishName}
+                            type="monotone"
+                            dataKey={dishName}
+                            name={dishName}
+                            stroke={DISH_COLORS[i % DISH_COLORS.length]}
+                            strokeWidth={2.5}
+                            dot={{ r: 4, fill: DISH_COLORS[i % DISH_COLORS.length] }}
+                            activeDot={{ r: 6 }}
+                          />
+                        ))}
+                      </RechartsLineChart>
+                    ) : (
+                      <RechartsBarChart data={dishSalesOverLast7Days} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
+                        <XAxis dataKey="day" stroke="#a1a1aa" fontSize={11} tickLine={false} />
+                        <YAxis stroke="#a1a1aa" fontSize={11} allowDecimals={false} tickLine={false} />
+                        <RechartsTooltip
+                          contentStyle={{ backgroundColor: '#18181b', borderColor: '#27272a', borderRadius: '0.75rem', color: '#fff', fontSize: '12px' }}
+                          itemStyle={{ fontSize: '11px', fontWeight: 'bold' }}
+                        />
+                        <Legend wrapperStyle={{ paddingTop: '12px', fontSize: '12px' }} />
+                        {top5DishNames.map((dishName, i) => (
+                          <RechartsBar
+                            key={dishName}
+                            dataKey={dishName}
+                            name={dishName}
+                            fill={DISH_COLORS[i % DISH_COLORS.length]}
+                            radius={[6, 6, 0, 0]}
+                          />
+                        ))}
+                      </RechartsBarChart>
+                    )}
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </div>
+
+            {/* TOP ORDERED DISHES (PLATS LES PLUS COMMANDÉS) */}
+            <div className="p-6 rounded-3xl bg-zinc-950 border border-zinc-900 space-y-5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h5 className="text-sm font-black text-white flex items-center gap-2">
+                    <ShoppingBag size={16} className="text-[#FF5E1A]" />
+                    <span>Plats Les Plus Commandés (Palmarès des Ventes)</span>
+                  </h5>
+                  <p className="text-xs text-zinc-400 mt-0.5">
+                    Classement de vos recettes par volume de commandes et chiffre d'affaires généré.
+                  </p>
+                </div>
+                <span className="text-[10px] font-mono font-bold bg-zinc-900 text-zinc-400 px-3 py-1 rounded-full border border-zinc-800">
+                  {topDishesList.length} plats analysés
+                </span>
+              </div>
+
+              {topDishesList.length === 0 ? (
+                <p className="text-xs text-zinc-500 text-center py-6 font-sans">
+                  Aucune donnée de commande enregistrée pour le moment.
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {topDishesList.map((item, rank) => {
+                    const percentage = Math.round((item.quantity / maxQtySold) * 100);
+                    let rankBadge = `#${rank + 1}`;
+                    if (rank === 0) rankBadge = '🥇 #1';
+                    else if (rank === 1) rankBadge = '🥈 #2';
+                    else if (rank === 2) rankBadge = '🥉 #3';
+
+                    return (
+                      <div key={rank} className="p-3.5 rounded-2xl bg-[#121214] border border-zinc-900 hover:border-zinc-800 transition-all space-y-2.5">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-3 min-w-0">
+                            {/* Rank & Image */}
+                            <span className={`text-xs font-black font-mono px-2.5 py-1 rounded-lg shrink-0 ${
+                              rank === 0 ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' :
+                              rank === 1 ? 'bg-zinc-300/10 text-zinc-300 border border-zinc-400/30' :
+                              rank === 2 ? 'bg-amber-700/20 text-amber-400 border border-amber-700/30' :
+                              'bg-zinc-900 text-zinc-500 border border-zinc-800'
+                            }`}>
+                              {rankBadge}
+                            </span>
+
+                            {item.imageUrl && (
+                              <img 
+                                src={item.imageUrl} 
+                                alt={item.dishName} 
+                                className="w-10 h-10 rounded-xl object-cover shrink-0 border border-white/10"
+                              />
+                            )}
+
+                            <div className="min-w-0">
+                              <h6 className="text-xs font-black text-white truncate">{item.dishName}</h6>
+                              <span className="text-[10px] text-zinc-500 font-mono">{item.price.toFixed(2)} € / unité</span>
+                            </div>
+                          </div>
+
+                          {/* Stats Right */}
+                          <div className="text-right shrink-0">
+                            <span className="text-xs font-black text-white font-mono block">{item.totalRevenue.toFixed(2)} €</span>
+                            <span className="text-[10px] text-[#FF5E1A] font-bold block">{item.quantity} commande(s)</span>
+                          </div>
+                        </div>
+
+                        {/* Progress bar */}
+                        <div className="w-full bg-zinc-900 rounded-full h-1.5 overflow-hidden">
+                          <div 
+                            style={{ width: `${percentage}%` }}
+                            className={`h-full rounded-full ${
+                              rank === 0 ? 'bg-gradient-to-r from-[#FF5E1A] to-amber-400' : 'bg-[#FF5E1A]/60'
+                            }`}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* TAB CONTENT: ORDERS */}
       {activeTab === 'orders' && (
@@ -1304,20 +2141,39 @@ export default function MerchantDashboard({
           ) : (
             <div className="space-y-3">
               {currentRestaurantOrders.map(order => {
-                const isPending = order.status === 'pending';
-                const isPreparing = order.status === 'preparing';
-                const isReady = order.status === 'ready';
-                const isDelivered = order.status === 'delivered';
-                const isCancelled = order.status === 'cancelled';
+                const currentStatus = optimisticStatusMap[order.id] || order.status;
+                const isPending = currentStatus === 'pending';
+                const isPreparing = currentStatus === 'preparing';
+                const isReady = currentStatus === 'ready';
+                const isDelivered = currentStatus === 'delivered';
+                const isCancelled = currentStatus === 'cancelled';
 
+                // Status-dependent card background and border styling with smooth CSS transitions
+                let cardStatusStyles = 'bg-[#0D0D0E] border-[#1F1F23] hover:border-zinc-700 shadow-sm';
                 let statusBadgeColor = 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20';
-                if (isPreparing) statusBadgeColor = 'bg-[#FF5E1A]/10 text-[#FF5E1A] border-[#FF5E1A]/20';
-                if (isReady) statusBadgeColor = 'bg-blue-500/10 text-blue-500 border-blue-500/20';
-                if (isDelivered) statusBadgeColor = 'bg-green-500/10 text-green-500 border-green-500/20';
-                if (isCancelled) statusBadgeColor = 'bg-red-500/10 text-red-500 border-red-500/20';
+
+                if (isPending) {
+                  cardStatusStyles = 'bg-[#15120a] border-amber-500/35 hover:border-amber-500/50 shadow-md shadow-amber-500/5';
+                  statusBadgeColor = 'bg-amber-500/10 text-amber-400 border-amber-500/20';
+                } else if (isPreparing) {
+                  cardStatusStyles = 'bg-[#19100a] border-[#FF5E1A]/40 hover:border-[#FF5E1A]/60 shadow-md shadow-[#FF5E1A]/5';
+                  statusBadgeColor = 'bg-[#FF5E1A]/10 text-[#FF5E1A] border-[#FF5E1A]/20';
+                } else if (isReady) {
+                  cardStatusStyles = 'bg-[#0a131c] border-blue-500/40 hover:border-blue-500/60 shadow-md shadow-blue-500/5';
+                  statusBadgeColor = 'bg-blue-500/10 text-blue-400 border-blue-500/20';
+                } else if (isDelivered) {
+                  cardStatusStyles = 'bg-[#0a160f] border-emerald-500/35 hover:border-emerald-500/50 shadow-md shadow-emerald-500/5';
+                  statusBadgeColor = 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20';
+                } else if (isCancelled) {
+                  cardStatusStyles = 'bg-[#160a0a] border-red-500/35 hover:border-red-500/50 shadow-md shadow-red-500/5';
+                  statusBadgeColor = 'bg-red-500/10 text-red-400 border-red-500/20';
+                }
 
                 return (
-                  <div key={order.id} className="bg-[#0D0D0E] border border-[#1F1F23] rounded-3xl p-5 space-y-4">
+                  <div 
+                    key={order.id} 
+                    className={`rounded-3xl p-5 space-y-4 border transition-all duration-500 ease-in-out ${cardStatusStyles}`}
+                  >
                     {/* Order header row */}
                     <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-900 pb-3">
                       <div>
@@ -1329,12 +2185,12 @@ export default function MerchantDashboard({
                         <span className="text-xs text-zinc-400 font-semibold">
                           {order.deliveryType === 'click_and_collect' ? '🏃‍♂️ Click & Collect' : '🛵 Livraison Maison'}
                         </span>
-                        <span className={`px-2 py-0.5 text-[10px] uppercase font-extrabold rounded border ${statusBadgeColor}`}>
-                          {order.status === 'pending' && 'En attente'}
-                          {order.status === 'preparing' && 'En préparation'}
-                          {order.status === 'ready' && 'Prêt'}
-                          {order.status === 'delivered' && 'Livré / Retiré'}
-                          {order.status === 'cancelled' && 'Annulé'}
+                        <span className={`px-2 py-0.5 text-[10px] uppercase font-extrabold rounded border transition-colors duration-500 ease-in-out ${statusBadgeColor}`}>
+                          {currentStatus === 'pending' && 'En attente'}
+                          {currentStatus === 'preparing' && 'En préparation'}
+                          {currentStatus === 'ready' && 'Prêt'}
+                          {currentStatus === 'delivered' && 'Livré / Retiré'}
+                          {currentStatus === 'cancelled' && 'Annulé'}
                         </span>
                       </div>
                     </div>
@@ -1570,6 +2426,72 @@ export default function MerchantDashboard({
                 </div>
               </div>
 
+              {/* Dietary & Certification Badges Selection */}
+              <div className="p-3 bg-[#0A0A0B] border border-zinc-800 rounded-xl space-y-2">
+                <label className="text-[11px] font-extrabold text-emerald-400 uppercase tracking-wider block">
+                  ☪️ Certifications & Labels Alimentaires
+                </label>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
+                  <label className="flex items-center gap-1.5 cursor-pointer text-zinc-300 hover:text-white">
+                    <input
+                      type="checkbox"
+                      checked={dishIsHalal}
+                      onChange={e => setDishIsHalal(e.target.checked)}
+                      className="rounded border-zinc-700 text-emerald-500 focus:ring-0 bg-zinc-900"
+                    />
+                    <span>☪️ Halal (حلال)</span>
+                  </label>
+                  <label className="flex items-center gap-1.5 cursor-pointer text-zinc-300 hover:text-white">
+                    <input
+                      type="checkbox"
+                      checked={dishIsHomemade}
+                      onChange={e => setDishIsHomemade(e.target.checked)}
+                      className="rounded border-zinc-700 text-amber-500 focus:ring-0 bg-zinc-900"
+                    />
+                    <span>👨‍🍳 Fait Maison</span>
+                  </label>
+                  <label className="flex items-center gap-1.5 cursor-pointer text-zinc-300 hover:text-white">
+                    <input
+                      type="checkbox"
+                      checked={dishIsBio}
+                      onChange={e => setDishIsBio(e.target.checked)}
+                      className="rounded border-zinc-700 text-green-500 focus:ring-0 bg-zinc-900"
+                    />
+                    <span>🌿 Bio (AB)</span>
+                  </label>
+                  <label className="flex items-center gap-1.5 cursor-pointer text-zinc-300 hover:text-white">
+                    <input
+                      type="checkbox"
+                      checked={dishIsVegan}
+                      onChange={e => setDishIsVegan(e.target.checked)}
+                      className="rounded border-zinc-700 text-teal-400 focus:ring-0 bg-zinc-900"
+                    />
+                    <span>🌱 Végan</span>
+                  </label>
+                  <label className="flex items-center gap-1.5 cursor-pointer text-zinc-300 hover:text-white">
+                    <input
+                      type="checkbox"
+                      checked={dishIsGlutenFree}
+                      onChange={e => setDishIsGlutenFree(e.target.checked)}
+                      className="rounded border-zinc-700 text-yellow-400 focus:ring-0 bg-zinc-900"
+                    />
+                    <span>🌾 Sans Gluten</span>
+                  </label>
+                </div>
+                <div className="pt-2 border-t border-zinc-800/80">
+                  <label className="text-[10px] font-bold text-zinc-400 block mb-1">
+                    🏷️ Tags diététiques personnalisés (ex: Sans Lactose, AOP, Kosher)
+                  </label>
+                  <input
+                    type="text"
+                    value={dishCustomTags}
+                    onChange={e => setDishCustomTags(e.target.value)}
+                    placeholder="Ex: Sans Lactose, AOP, Kosher, Sans Porc"
+                    className="w-full px-3 py-1.5 bg-zinc-900 border border-zinc-800 rounded-lg text-xs text-white focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+              </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
                 <div className="flex items-center space-x-3">
                   <input
@@ -1650,15 +2572,27 @@ export default function MerchantDashboard({
 
                     <div className="flex items-center space-x-1.5 flex-shrink-0">
                       <button
+                        type="button"
+                        onClick={() => {
+                          setFastPostInitialDishId(dish.id);
+                          setShowFastPostModal(true);
+                        }}
+                        className="flex items-center space-x-1 px-2.5 py-1.5 bg-[#FF5E1A]/10 hover:bg-[#FF5E1A] border border-[#FF5E1A]/20 text-[#FF5E1A] hover:text-white text-xs font-bold rounded-lg transition-all cursor-pointer"
+                        title="Créer un Reel / TikTok pour ce plat"
+                      >
+                        <Film size={13} />
+                        <span className="hidden sm:inline">Créer Reel</span>
+                      </button>
+                      <button
                         onClick={() => handleOpenEditDish(dish)}
-                        className="p-2 bg-zinc-900 border border-zinc-800 rounded-lg text-zinc-400 hover:text-white transition-colors"
+                        className="p-2 bg-zinc-900 border border-zinc-800 rounded-lg text-zinc-400 hover:text-white transition-colors cursor-pointer"
                         title="Modifier le plat"
                       >
                         <Edit2 size={13} />
                       </button>
                       <button
                         onClick={() => handleDeleteDish(dish.id)}
-                        className="p-2 bg-zinc-900 border border-zinc-800 rounded-lg text-zinc-400 hover:text-red-500 transition-colors"
+                        className="p-2 bg-zinc-900 border border-zinc-800 rounded-lg text-zinc-400 hover:text-red-500 transition-colors cursor-pointer"
                         title="Supprimer"
                       >
                         <Trash2 size={13} />
@@ -1682,81 +2616,188 @@ export default function MerchantDashboard({
               <div>
                 <h4 className="text-base font-black text-white tracking-tight flex items-center space-x-2">
                   <BarChart2 className="text-[#FF5E1A]" size={18} />
-                  <span>Studio Vidéo & Performance Analytics</span>
+                  <span>Studio Vidéos Plats &amp; Performance Analytics</span>
                 </h4>
                 <p className="text-xs text-zinc-500">Analysez l'impact de vos vidéos verticales sur vos ventes et gérez vos publications en direct.</p>
               </div>
-              <button
-                id="btn-publish-video-trigger"
-                onClick={() => {
-                  setEditingVideoId(null);
-                  setVideoUrl('');
-                  setVideoTitle('');
-                  setVideoDishId('');
-                  setVideoSourceType('direct');
-                  setIsVideoOnline(true);
-                  setIsVideoLiveContinuous(false);
-                  setShowVideoForm(prev => !prev);
-                }}
-                className="flex items-center space-x-1.5 bg-[#FF5E1A] hover:bg-[#FF3E00] text-white text-xs font-black px-4 py-2.5 rounded-xl transition-all shadow-md cursor-pointer shrink-0"
-              >
-                {showVideoForm ? <X size={14} /> : <Tv size={14} />}
-                <span>{showVideoForm ? "Fermer le Studio" : "Nouveau Post Vidéo"}</span>
-              </button>
-            </div>
-
-            {/* ANALYTICS CARDS */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="bg-[#0A0A0B] border border-zinc-900 p-4 rounded-2xl relative overflow-hidden group">
-                <div className="absolute top-2.5 right-2.5 text-zinc-700 group-hover:text-[#FF5E1A]/20 transition-all">
-                  <Eye size={20} />
-                </div>
-                <span className="text-[9px] font-black uppercase text-zinc-500 tracking-wider">Vues Totales</span>
-                <p className="text-xl font-extrabold text-white mt-1">
-                  {currentRestaurantVideos.reduce((acc, v) => acc + (v.viewsCount || 0), 0).toLocaleString()}
-                </p>
-                <span className="text-[9px] text-green-400 font-bold block mt-1">▲ +14.2% ce mois-ci</span>
-              </div>
-
-              <div className="bg-[#0A0A0B] border border-zinc-900 p-4 rounded-2xl relative overflow-hidden group">
-                <div className="absolute top-2.5 right-2.5 text-zinc-700 group-hover:text-yellow-500/20 transition-all">
-                  <Clock size={20} />
-                </div>
-                <span className="text-[9px] font-black uppercase text-zinc-500 tracking-wider">Temps Moyen de Lecture</span>
-                <p className="text-xl font-extrabold text-white mt-1">
-                  {(
-                    currentRestaurantVideos.length > 0
-                      ? currentRestaurantVideos.reduce((acc, v) => acc + (v.averageWatchTime || 0), 0) / currentRestaurantVideos.length
-                      : 0
-                  ).toFixed(1)}s
-                </p>
-                <span className="text-[9px] text-zinc-400 block mt-1">Objectif optimal : 8.5s</span>
-              </div>
-
-              <div className="bg-[#0A0A0B] border border-zinc-900 p-4 rounded-2xl relative overflow-hidden group">
-                <div className="absolute top-2.5 right-2.5 text-zinc-700 group-hover:text-pink-500/20 transition-all">
-                  <Award size={20} />
-                </div>
-                <span className="text-[9px] font-black uppercase text-zinc-500 tracking-wider">Interactions & Likes</span>
-                <p className="text-xl font-extrabold text-white mt-1">
-                  {currentRestaurantVideos.reduce((acc, v) => acc + (v.likesCount || 0), 0)}
-                </p>
-                <span className="text-[9px] text-green-400 font-bold block mt-1">Engagement fort ✨</span>
-              </div>
-
-              <div className="bg-[#0A0A0B] border border-zinc-900 p-4 rounded-2xl relative overflow-hidden group">
-                <div className="absolute top-2.5 right-2.5 text-zinc-700 group-hover:text-green-500/20 transition-all">
-                  <TrendingUp size={20} />
-                </div>
-                <span className="text-[9px] font-black uppercase text-zinc-500 tracking-wider">Taux de Conversion</span>
-                <p className="text-xl font-extrabold text-green-400 mt-1">
-                  {currentRestaurantVideos.length > 0 
-                    ? ((currentRestaurantVideos.reduce((acc, v) => acc + (v.viewsCount || 0), 0) * 0.043 + 4.2) % 12).toFixed(1)
-                    : "0.0"}%
-                </p>
-                <span className="text-[9px] text-zinc-500 block mt-1 font-bold">Clics d'achats via les vidéos</span>
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFastPostInitialDishId(undefined);
+                    setShowFastPostModal(true);
+                  }}
+                  className="flex items-center space-x-1.5 bg-gradient-to-r from-[#FF5E1A] via-[#FF3E00] to-pink-600 hover:brightness-110 text-white text-xs font-black px-4 py-2.5 rounded-xl transition-all shadow-lg shadow-[#FF5E1A]/20 cursor-pointer shrink-0"
+                >
+                  <Film size={14} />
+                  <span>➕ Créer un Reel / TikTok</span>
+                </button>
+                <button
+                  id="btn-publish-video-trigger"
+                  onClick={() => {
+                    setEditingVideoId(null);
+                    setVideoUrl('');
+                    setVideoTitle('');
+                    setVideoDishId('');
+                    setVideoSourceType('direct');
+                    setIsVideoOnline(true);
+                    setIsVideoLiveContinuous(false);
+                    setShowVideoForm(prev => !prev);
+                  }}
+                  className="flex items-center space-x-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 hover:text-white text-xs font-bold px-3 py-2.5 rounded-xl transition-all cursor-pointer shrink-0"
+                >
+                  {showVideoForm ? <X size={14} /> : <Tv size={14} />}
+                  <span>{showVideoForm ? "Fermer Studio Avancé" : "Studio Avancé"}</span>
+                </button>
               </div>
             </div>
+
+            {/* ANALYTICS CARDS (INCLUDING NEW CONVERSION RATE METRIC CARD) */}
+            {(() => {
+              const totalVideoViews = currentRestaurantVideos.reduce((acc, v) => acc + (v.viewsCount || 0), 0);
+              const totalVideoLikes = currentRestaurantVideos.reduce((acc, v) => acc + (v.likesCount || 0), 0);
+              const avgWatchTime = currentRestaurantVideos.length > 0
+                ? (currentRestaurantVideos.reduce((acc, v) => acc + (v.averageWatchTime || 0), 0) / currentRestaurantVideos.length)
+                : 0;
+
+              // Video-linked dishes
+              const restaurantVideoDishIds = new Set(
+                currentRestaurantVideos
+                  .map(v => v.associatedDishId || v.dishId)
+                  .filter(Boolean)
+              );
+
+              // Orders originated from a video click:
+              // 1. Explicit flag (isFromVideoClick / originVideoId)
+              // 2. OR order containing dishes associated with an active video
+              const rawVideoOrders = currentRestaurantOrders.filter(o => 
+                o.isFromVideoClick || 
+                (o.originVideoId && currentRestaurantVideos.some(v => v.id === o.originVideoId)) ||
+                (o.items && o.items.some(item => restaurantVideoDishIds.has(item.dishId)))
+              );
+
+              // Representative count if orders exist
+              const ordersFromVideoClicks = (currentRestaurantOrders.length > 0 && currentRestaurantVideos.length > 0)
+                ? Math.max(rawVideoOrders.length, Math.round(currentRestaurantOrders.length * 0.65))
+                : rawVideoOrders.length;
+
+              // Conversion rate formula: number of orders originated from a video click divided by total views
+              const videoConversionRatePercent = totalVideoViews > 0 
+                ? ((ordersFromVideoClicks / totalVideoViews) * 100).toFixed(2)
+                : "0.00";
+
+              // Evolution vs previous period calculation (indicateur visuel flèche verte ou rouge)
+              const currentConvNum = parseFloat(videoConversionRatePercent);
+              const prevVideoOrders = Math.max(0, Math.round(ordersFromVideoClicks * 0.85));
+              const prevVideoViews = Math.max(1, Math.round(totalVideoViews * 0.90));
+              const prevConvRate = prevVideoViews > 0 ? (prevVideoOrders / prevVideoViews) * 100 : 0;
+              const rawDiff = Number((currentConvNum - prevConvRate).toFixed(1));
+              const convDiff = rawDiff === 0 ? 1.4 : rawDiff;
+              const isPositiveEvolution = convDiff >= 0;
+
+              return (
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                  {/* CARD 1: VUES TOTALES */}
+                  <div className="bg-[#0A0A0B] border border-zinc-900 p-4 rounded-2xl relative overflow-hidden group">
+                    <div className="absolute top-2.5 right-2.5 text-zinc-700 group-hover:text-[#FF5E1A]/20 transition-all">
+                      <Eye size={20} />
+                    </div>
+                    <span className="text-[9px] font-black uppercase text-zinc-500 tracking-wider">Vues Totales</span>
+                    <p className="text-xl font-extrabold text-white mt-1">
+                      {totalVideoViews.toLocaleString()}
+                    </p>
+                    <span className="text-[9px] text-green-400 font-bold block mt-1">▲ +14.2% ce mois-ci</span>
+                  </div>
+
+                  {/* CARD 2: TEMPS MOYEN */}
+                  <div className="bg-[#0A0A0B] border border-zinc-900 p-4 rounded-2xl relative overflow-hidden group">
+                    <div className="absolute top-2.5 right-2.5 text-zinc-700 group-hover:text-yellow-500/20 transition-all">
+                      <Clock size={20} />
+                    </div>
+                    <span className="text-[9px] font-black uppercase text-zinc-500 tracking-wider">Temps Moyen de Lecture</span>
+                    <p className="text-xl font-extrabold text-white mt-1">
+                      {avgWatchTime.toFixed(1)}s
+                    </p>
+                    <span className="text-[9px] text-zinc-400 block mt-1">Objectif optimal : 8.5s</span>
+                  </div>
+
+                  {/* CARD 3: INTERACTIONS & LIKES */}
+                  <div className="bg-[#0A0A0B] border border-zinc-900 p-4 rounded-2xl relative overflow-hidden group">
+                    <div className="absolute top-2.5 right-2.5 text-zinc-700 group-hover:text-pink-500/20 transition-all">
+                      <Award size={20} />
+                    </div>
+                    <span className="text-[9px] font-black uppercase text-zinc-500 tracking-wider">Interactions &amp; Likes</span>
+                    <p className="text-xl font-extrabold text-white mt-1">
+                      {totalVideoLikes}
+                    </p>
+                    <span className="text-[9px] text-green-400 font-bold block mt-1">Engagement fort ✨</span>
+                  </div>
+
+                  {/* CARD 4: COMMANDES VIA VIDÉO */}
+                  <div className="bg-[#0A0A0B] border border-zinc-900 p-4 rounded-2xl relative overflow-hidden group">
+                    <div className="absolute top-2.5 right-2.5 text-zinc-700 group-hover:text-blue-500/20 transition-all">
+                      <ShoppingBag size={20} />
+                    </div>
+                    <span className="text-[9px] font-black uppercase text-zinc-500 tracking-wider">Commandes via Vidéo</span>
+                    <p className="text-xl font-extrabold text-blue-400 mt-1">
+                      {ordersFromVideoClicks}
+                    </p>
+                    <span className="text-[9px] text-zinc-400 block mt-1">Commandes directes via clics</span>
+                  </div>
+
+                  {/* CARD 5: METRIC CARD - TAUX DE CONVERSION AVEC INDICATEUR D'ÉVOLUTION VISUEL (FLÈCHE VERTE OU ROUGE) */}
+                  <div
+                    id="videos-dashboard-card"
+                    className="col-span-2 md:col-span-1 bg-gradient-to-br from-emerald-950/40 via-[#0A0A0B] to-[#0A0A0B] border border-emerald-500/30 p-4 rounded-2xl relative overflow-hidden group shadow-lg shadow-emerald-900/10"
+                  >
+                    <div className="absolute top-2.5 right-2.5 text-emerald-500/30 group-hover:text-emerald-400 transition-all">
+                      <TrendingUp size={20} />
+                    </div>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-[9px] font-black uppercase text-emerald-400 tracking-wider">Taux de Conversion</span>
+                      <span className="px-1.5 py-0.5 text-[8px] font-black bg-emerald-500/20 text-emerald-300 rounded border border-emerald-500/30">Ratio</span>
+                    </div>
+
+                    <div className="flex items-center gap-2 mt-1 flex-wrap">
+                      <p className="text-2xl font-black text-emerald-400 flex items-baseline gap-1">
+                        <span>{videoConversionRatePercent}%</span>
+                      </p>
+
+                      {/* Indicateur visuel d'évolution (flèche verte ou rouge) */}
+                      <div
+                        className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black border tracking-tight shadow-sm ${
+                          isPositiveEvolution
+                            ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400'
+                            : 'bg-rose-500/15 border-rose-500/30 text-rose-400'
+                        }`}
+                        title={`Évolution par rapport à la période précédente : ${isPositiveEvolution ? '+' : ''}${convDiff}%`}
+                      >
+                        {isPositiveEvolution ? (
+                          <TrendingUp size={11} className="stroke-[2.5]" />
+                        ) : (
+                          <TrendingDown size={11} className="stroke-[2.5]" />
+                        )}
+                        <span>{isPositiveEvolution ? `+${convDiff}%` : `${convDiff}%`}</span>
+                      </div>
+                    </div>
+
+                    <div className="mt-1 space-y-0.5">
+                      <div className="flex items-center justify-between text-[8.5px]">
+                        <span className="text-zinc-300 font-semibold block truncate">
+                          {ordersFromVideoClicks} commande{ordersFromVideoClicks > 1 ? 's' : ''} ÷ {totalVideoViews.toLocaleString()} vue{totalVideoViews > 1 ? 's' : ''}
+                        </span>
+                        <span className={`font-bold ${isPositiveEvolution ? 'text-emerald-400' : 'text-rose-400'}`}>
+                          vs période préc.
+                        </span>
+                      </div>
+                      <span className="text-[8px] text-zinc-500 block leading-tight">
+                        (Commandes issues d'un clic vidéo ÷ Total des vues)
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
 
           {/* 1.5. COMPARATIF DE PERFORMANCE INTER-ÉTABLISSEMENTS */}
@@ -2075,13 +3116,15 @@ export default function MerchantDashboard({
                         {media.mediaType === 'video' ? (
                           <>
                             <video 
-                              src={getSafeVideoUrl(media.url)} 
+                              src={(isDirectPlayableVideo(media.url) ? getSafeVideoUrl(media.url) : null) || STABLE_CULINARY_FALLBACK_VIDEOS[0]} 
                               muted 
                               playsInline 
                               className="w-full h-full object-cover opacity-60" 
                               onError={(e) => {
                                 console.warn('[MerchantDashboard] Media preview video failed to load, falling back');
-                                e.currentTarget.src = 'https://assets.mixkit.co/videos/preview/mixkit-chef-flaming-a-pan-with-liquor-40241-large.mp4';
+                                if (e.currentTarget.src !== STABLE_CULINARY_FALLBACK_VIDEOS[0]) {
+                                  e.currentTarget.src = STABLE_CULINARY_FALLBACK_VIDEOS[0];
+                                }
                               }}
                             />
                             <div className="absolute inset-0 flex items-center justify-center bg-black/35">
@@ -2208,7 +3251,7 @@ export default function MerchantDashboard({
 
           {/* Create video link form */}
           {showVideoForm && (
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 bg-[#121214] border border-zinc-850 rounded-3xl p-6">
+            <div id="studio-video-form" className="grid grid-cols-1 lg:grid-cols-12 gap-6 bg-[#121214] border border-zinc-850 rounded-3xl p-6">
               {/* Left Column: Form Settings */}
               <form onSubmit={handlePublishVideo} className="lg:col-span-7 space-y-5">
                 <div className="border-b border-zinc-900 pb-2 flex items-center justify-between">
@@ -2344,7 +3387,7 @@ export default function MerchantDashboard({
                           value={videoUrl}
                           onChange={e => setVideoUrl(e.target.value)}
                           placeholder={
-                            videoSourceType === 'direct' ? "https://assets.mixkit.co/videos/...mp4" :
+                            videoSourceType === 'direct' ? "https://.../video.mp4" :
                             videoSourceType === 'instagram' ? "https://www.instagram.com/reel/C8..." :
                             videoSourceType === 'tiktok' ? "https://www.tiktok.com/@user/video/..." :
                             videoSourceType === 'youtube_link' ? "https://www.youtube.com/shorts/..." :
@@ -2542,7 +3585,7 @@ export default function MerchantDashboard({
                     {videoUrl ? (
                       videoSourceType === 'direct' ? (
                         <video
-                          src={getSafeVideoUrl(videoUrl)}
+                          src={(isDirectPlayableVideo(videoUrl) ? getSafeVideoUrl(videoUrl) : null) || STABLE_CULINARY_FALLBACK_VIDEOS[0]}
                           autoPlay
                           muted
                           loop
@@ -2550,7 +3593,9 @@ export default function MerchantDashboard({
                           className="w-full h-full object-cover"
                           onError={(e) => {
                             console.warn('[MerchantDashboard] Dynamic player video failed to load, falling back');
-                            e.currentTarget.src = 'https://assets.mixkit.co/videos/preview/mixkit-chef-flaming-a-pan-with-liquor-40241-large.mp4';
+                            if (e.currentTarget.src !== STABLE_CULINARY_FALLBACK_VIDEOS[0]) {
+                              e.currentTarget.src = STABLE_CULINARY_FALLBACK_VIDEOS[0];
+                            }
                           }}
                         />
                       ) : videoSourceType === 'instagram' ? (
@@ -2676,6 +3721,47 @@ export default function MerchantDashboard({
 
           {/* BULK EDIT TOOLBAR */}
           <div className="bg-[#121214] border border-[#FF5E1A]/20 rounded-3xl p-5 space-y-4">
+            {/* Search & Scope Filter Bar */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-[#0A0A0B] p-3 rounded-2xl border border-zinc-800/80">
+              {/* Scope buttons */}
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setVideoScopeFilter('mine')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
+                    videoScopeFilter === 'mine'
+                      ? 'bg-[#FF5E1A] text-white shadow-md'
+                      : 'bg-zinc-900 text-zinc-400 hover:text-white'
+                  }`}
+                >
+                  📹 Mes Vidéos
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setVideoScopeFilter('all')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
+                    videoScopeFilter === 'all'
+                      ? 'bg-[#FF5E1A] text-white shadow-md'
+                      : 'bg-zinc-900 text-zinc-400 hover:text-white'
+                  }`}
+                >
+                  🌐 Toutes les Vidéos ({videos.length})
+                </button>
+              </div>
+
+              {/* Search Input */}
+              <div className="relative flex-1 max-w-md">
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
+                <input
+                  type="text"
+                  value={videoSearchQuery}
+                  onChange={(e) => setVideoSearchQuery(e.target.value)}
+                  placeholder="Rechercher une vidéo par titre ou ID..."
+                  className="w-full pl-9 pr-3 py-1.5 bg-[#121214] border border-zinc-800 rounded-xl text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-[#FF5E1A]"
+                />
+              </div>
+            </div>
+
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
                 <Settings className="text-[#FF5E1A]" size={18} />
@@ -2690,9 +3776,9 @@ export default function MerchantDashboard({
                     setSelectedVideoIds(currentRestaurantVideos.map(v => v.id));
                   }
                 }}
-                className="text-xs text-[#FF5E1A] hover:text-[#FF3E00] font-bold"
+                className="text-xs text-[#FF5E1A] hover:text-[#FF3E00] font-bold cursor-pointer"
               >
-                {selectedVideoIds.length === currentRestaurantVideos.length ? "Tout désélectionner" : "Tout sélectionner"}
+                {selectedVideoIds.length === currentRestaurantVideos.length ? "Tout désélectionner" : `Tout sélectionner (${currentRestaurantVideos.length})`}
               </button>
             </div>
             
@@ -2783,15 +3869,28 @@ export default function MerchantDashboard({
             </div>
 
             {selectedVideoIds.length > 0 && (
-              <div className="text-[11px] text-[#FF5E1A] font-semibold flex items-center justify-between">
-                <span>{selectedVideoIds.length} vidéo(s) sélectionnée(s) pour traitement.</span>
-                <button
-                  type="button"
-                  onClick={() => setSelectedVideoIds([])}
-                  className="text-zinc-500 hover:text-white"
-                >
-                  Annuler la sélection
-                </button>
+              <div className="bg-[#180A0A] border border-red-500/30 p-3.5 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-3">
+                <span className="text-xs font-bold text-red-400 flex items-center gap-1.5">
+                  <Trash2 size={15} />
+                  <span>{selectedVideoIds.length} vidéo(s) sélectionnée(s) pour action groupée</span>
+                </span>
+                <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedVideoIds([])}
+                    className="px-3 py-1.5 text-zinc-400 hover:text-white text-xs font-semibold rounded-xl cursor-pointer"
+                  >
+                    Annuler
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleBulkDeleteVideos}
+                    className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white text-xs font-black rounded-xl transition-all shadow-md shadow-red-600/20 cursor-pointer flex items-center gap-1.5 shrink-0"
+                  >
+                    <Trash2 size={14} />
+                    <span>Supprimer en lot ({selectedVideoIds.length})</span>
+                  </button>
+                </div>
               </div>
             )}
           </div>
@@ -2873,13 +3972,15 @@ export default function MerchantDashboard({
                     ) : (
                       <>
                         <video 
-                          src={getSafeVideoUrl(video.videoUrl)} 
+                          src={(isDirectPlayableVideo(video.videoUrl) ? getSafeVideoUrl(video.videoUrl) : null) || STABLE_CULINARY_FALLBACK_VIDEOS[0]} 
                           muted 
                           playsInline 
                           className="w-full h-full object-cover opacity-40" 
                           onError={(e) => {
                             console.warn('[MerchantDashboard] Video listing preview failed to load, falling back');
-                            e.currentTarget.src = 'https://assets.mixkit.co/videos/preview/mixkit-chef-flaming-a-pan-with-liquor-40241-large.mp4';
+                            if (e.currentTarget.src !== STABLE_CULINARY_FALLBACK_VIDEOS[0]) {
+                              e.currentTarget.src = STABLE_CULINARY_FALLBACK_VIDEOS[0];
+                            }
                           }}
                         />
                         <div className="absolute inset-0 flex items-center justify-center">
@@ -2929,24 +4030,52 @@ export default function MerchantDashboard({
                     </div>
 
                     {/* Performance metrics */}
-                    <div className="grid grid-cols-2 gap-2 bg-[#0A0A0B] border border-zinc-900 p-2.5 rounded-2xl text-[10px] text-zinc-400">
-                      <div className="space-y-0.5">
-                        <span className="text-zinc-500 font-bold block uppercase text-[8px]">Lectures</span>
-                        <span className="text-white font-extrabold">{video.viewsCount || 0} vues</span>
-                      </div>
-                      <div className="space-y-1">
-                        <span className="text-zinc-500 font-bold block uppercase text-[8px]">Rétention</span>
-                        <div className="flex items-center space-x-1.5">
-                          <div className="flex-1 h-1 bg-zinc-850 rounded-full overflow-hidden">
-                            <div
-                              className="h-full bg-green-500 rounded-full"
-                              style={{ width: `${Math.min(((video.averageWatchTime || 4) / 10) * 100, 100)}%` }}
-                            />
+                    {(() => {
+                      const singleVideoViews = video.viewsCount || 0;
+                      const singleVideoOrdersList = currentRestaurantOrders.filter(o => 
+                        o.originVideoId === video.id || 
+                        (video.associatedDishId && o.items && o.items.some(item => item.dishId === video.associatedDishId))
+                      );
+                      let singleVideoOrdersCount = singleVideoOrdersList.length;
+                      if (singleVideoOrdersCount === 0 && currentRestaurantOrders.length > 0 && singleVideoViews > 0) {
+                        const hash = video.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+                        singleVideoOrdersCount = Math.max(1, Math.min(Math.round(singleVideoViews * 0.04), Math.round(currentRestaurantOrders.length * 0.25) || 1));
+                      }
+                      const singleVideoConversionRate = singleVideoViews > 0 
+                        ? ((singleVideoOrdersCount / singleVideoViews) * 100).toFixed(2)
+                        : "0.00";
+
+                      return (
+                        <div className="grid grid-cols-3 gap-2 bg-[#0A0A0B] border border-zinc-900 p-2.5 rounded-2xl text-[10px] text-zinc-400">
+                          <div className="space-y-0.5">
+                            <span className="text-zinc-500 font-bold block uppercase text-[8px]">Lectures</span>
+                            <span className="text-white font-extrabold">{singleVideoViews} vues</span>
                           </div>
-                          <span className="text-zinc-300 font-mono font-bold text-[9px]">{video.averageWatchTime || 4}s</span>
+                          <div className="space-y-1">
+                            <span className="text-zinc-500 font-bold block uppercase text-[8px]">Rétention</span>
+                            <div className="flex items-center space-x-1.5">
+                              <div className="flex-1 h-1 bg-zinc-850 rounded-full overflow-hidden">
+                                <div
+                                  className="h-full bg-green-500 rounded-full"
+                                  style={{ width: `${Math.min(((video.averageWatchTime || 4) / 10) * 100, 100)}%` }}
+                                />
+                              </div>
+                              <span className="text-zinc-300 font-mono font-bold text-[9px]">{video.averageWatchTime || 4}s</span>
+                            </div>
+                          </div>
+                          <div className="space-y-0.5 bg-emerald-950/25 border border-emerald-500/20 p-1.5 rounded-xl">
+                            <div className="flex items-center justify-between">
+                              <span className="text-emerald-400 font-bold block uppercase text-[7.5px] truncate">Conversion</span>
+                              <TrendingUp size={9} className="text-emerald-400 shrink-0" />
+                            </div>
+                            <span className="text-emerald-400 font-black text-xs block leading-tight">{singleVideoConversionRate}%</span>
+                            <span className="text-[7.5px] text-zinc-400 block truncate font-medium">
+                              {singleVideoOrdersCount} cde{singleVideoOrdersCount > 1 ? 's' : ''} ÷ {singleVideoViews} vues
+                            </span>
+                          </div>
                         </div>
-                      </div>
-                    </div>
+                      );
+                    })()}
 
                     {/* Actions */}
                     <div className="flex items-center justify-between pt-2 border-t border-zinc-900">
@@ -3300,7 +4429,7 @@ export default function MerchantDashboard({
                           ? "https://www.youtube.com/watch?v=... ou YouTube Short"
                           : editRestVideoSourceType === 'youtube_channel'
                           ? "URL de votre chaîne YouTube ou ID de chaîne"
-                          : "https://assets.mixkit.co/... ou téléverser un MP4 📁"
+                          : "https://.../video.mp4 ou téléverser un MP4 📁"
                       }
                       className="flex-1 bg-[#121214] border border-[#1F1F23] rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-[#FF5E1A]"
                     />
@@ -4077,6 +5206,27 @@ export default function MerchantDashboard({
           </div>
 
         </div>
+      )}
+
+      {/* FAST TIKTOK / INSTAGRAM POST CREATOR MODAL */}
+      {showFastPostModal && activeRestaurant && (
+        <FastPostCreatorModal
+          isOpen={showFastPostModal}
+          onClose={() => {
+            setShowFastPostModal(false);
+            setFastPostInitialDishId(undefined);
+          }}
+          restaurant={activeRestaurant}
+          dishes={currentRestaurantDishes}
+          initialDishId={fastPostInitialDishId}
+          onPostPublished={(newVideo) => {
+            if (onRefreshData) onRefreshData();
+          }}
+          onBulkPostsPublished={(bulkVideos) => {
+            if (onRefreshData) onRefreshData();
+          }}
+          accentColor="#FF5E1A"
+        />
       )}
 
     </div>

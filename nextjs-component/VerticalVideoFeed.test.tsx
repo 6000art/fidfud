@@ -124,7 +124,7 @@ describe('VerticalVideoFeed Component (Next.js 14 / Tailwind CSS)', () => {
 
     // Slide up drawer is opened and shows details of the dish
     expect(screen.getByText('PRIX UNITAIRE')).toBeInTheDocument();
-    expect(screen.getByText('12.90 €')).toBeInTheDocument();
+    expect(screen.getAllByText('12.90 €').length).toBeGreaterThan(0);
 
     jest.useRealTimers();
   });

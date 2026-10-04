@@ -7,53 +7,109 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Health check / Connection test document
+    match /test/{docId} {
+      allow read, get: if true;
+    }
+
     // Helper functions
     function isSignedIn() {
       return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
     }
 
     function isValidId(id) {
       return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
 
+    function isAdmin() {
+      return isSignedIn() && (
+        request.auth.token.email == 'sybis.co@gmail.com' ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    // Users Collection
+    match /users/{userId} {
+      allow read, get: if isOwner(userId) || isAdmin();
+      allow list: if isSignedIn() && (resource.data.id == request.auth.uid || isAdmin());
+      allow create: if isOwner(userId) || isSignedIn();
+      allow update: if isOwner(userId) || isAdmin();
+      allow delete: if isAdmin();
+    }
+
     // Restaurants
     match /restaurants/{restaurantId} {
-      allow read, write: if true;
+      allow read, list, get: if true;
+      allow create, update: if isSignedIn();
+      allow delete: if isSignedIn();
     }
 
     // Videos
     match /videos/{videoId} {
-      allow read, write: if true;
+      allow read, list, get: if true;
+      allow create, update, delete: if isSignedIn();
     }
 
     // Dishes
     match /dishes/{dishId} {
-      allow read, write: if true;
+      allow read, list, get: if true;
+      allow create, update, delete: if isSignedIn();
     }
 
     // Media Files
     match /media_files/{filename} {
-      allow read, write: if true;
+      allow read, list, get: if true;
+      allow create, update, delete: if true;
     }
 
     // Settings (Design & Branding)
     match /settings/{settingId} {
-      allow read, write: if true;
+      allow read, list, get: if true;
+      allow create, update, delete: if true;
+    }
+
+    // System Backups
+    match /system_backups/{backupId} {
+      allow read, list, get: if true;
+      allow create, update, delete: if true;
     }
 
     // Restaurateurs
     match /restaurateurs/{restaurateurId} {
-      allow read, write: if true;
+      allow read, list, get: if true;
+      allow create, update, delete: if isSignedIn();
     }
 
     // Restaurateur Media
     match /restaurateur_media/{mediaId} {
-      allow read, write: if true;
+      allow read, list, get: if true;
+      allow create, update, delete: if isSignedIn();
     }
 
     // Comments
     match /comments/{commentId} {
-      allow read, write: if true;
+      allow read, list, get: if true;
+      allow create: if isSignedIn();
+      allow update, delete: if isSignedIn();
+    }
+
+    // Reviews & Ratings
+    match /reviews/{reviewId} {
+      allow read, list, get: if true;
+      allow create: if true; // Allows clients/guests to submit authentic reviews
+      allow update, delete: if isSignedIn();
+    }
+
+    // Orders
+    match /orders/{orderId} {
+      allow read, list, get: if isSignedIn();
+      allow create, update: if isSignedIn();
+      allow delete: if isAdmin();
     }
   }
 }
+

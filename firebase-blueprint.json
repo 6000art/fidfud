@@ -1,5 +1,27 @@
 {
   "entities": {
+    "User": {
+      "title": "User",
+      "description": "Represents an authenticated user profile with role-based access permissions.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "email": { "type": "string" },
+        "role": { "type": "string", "enum": ["client", "restaurant", "admin", "courier"] },
+        "fullName": { "type": "string" },
+        "phone": { "type": "string" },
+        "address": { "type": "string" },
+        "siret": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "restaurantName": { "type": "string" },
+        "cuisineType": { "type": "string" },
+        "vehicle": { "type": "string" },
+        "zone": { "type": "string" },
+        "savedRestaurantIds": { "type": "array", "items": { "type": "string" } },
+        "favoriteRestaurantIds": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["id", "email", "role"]
+    },
     "Restaurant": {
       "title": "Restaurant",
       "description": "Represents a restaurateur profile containing their identity, contact, branding, and status.",
@@ -31,7 +53,9 @@
         "dispositionShop": { "type": "string" },
         "shortName": { "type": "string" },
         "latitude": { "type": "number" },
-        "longitude": { "type": "number" }
+        "longitude": { "type": "number" },
+        "rating": { "type": "number" },
+        "reviewCount": { "type": "number" }
       },
       "required": ["id", "name", "address"]
     },
@@ -63,9 +87,29 @@
         "price": { "type": "number" },
         "isAvailable": { "type": "boolean" },
         "imageUrl": { "type": "string" },
+        "rating": { "type": "number" },
+        "reviewCount": { "type": "number" },
         "createdAt": { "type": "string" }
       },
       "required": ["id", "restaurantId", "name", "price"]
+    },
+    "Review": {
+      "title": "Review",
+      "description": "Represents a user rating and written review for a dish or restaurant.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "restaurantId": { "type": "string" },
+        "dishId": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "userAvatar": { "type": "string" },
+        "rating": { "type": "number" },
+        "title": { "type": "string" },
+        "text": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "restaurantId", "userName", "rating", "text"]
     },
     "MediaFile": {
       "title": "MediaFile",
@@ -100,9 +144,26 @@
         "logoSizeDesktop": { "type": "number" },
         "autoSaveEnabled": { "type": "boolean" }
       }
+    },
+    "SystemBackup": {
+      "title": "SystemBackup",
+      "description": "Represents an automated or manual system data backup version.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "type": { "type": "string", "enum": ["original", "manual", "auto"] },
+        "data": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "name", "type", "createdAt"]
     }
   },
   "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Collection of user accounts and roles."
+    },
     "/restaurants/{restaurantId}": {
       "schema": "Restaurant",
       "description": "Collection of all registered restaurants / restaurateurs."
@@ -115,6 +176,10 @@
       "schema": "Dish",
       "description": "Collection of menu items offered by the restaurants."
     },
+    "/reviews/{reviewId}": {
+      "schema": "Review",
+      "description": "Collection of user reviews and ratings for dishes and restaurants."
+    },
     "/media_files/{filename}": {
       "schema": "MediaFile",
       "description": "Durable backup store for uploaded media files."
@@ -122,6 +187,10 @@
     "/settings/{settingId}": {
       "schema": "DesignSettings",
       "description": "Collection of global custom settings like design, branding, and customization."
+    },
+    "/system_backups/{backupId}": {
+      "schema": "SystemBackup",
+      "description": "Collection of automated and manual system backup snapshots."
     }
   }
 }

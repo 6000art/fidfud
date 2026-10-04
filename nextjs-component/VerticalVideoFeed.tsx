@@ -61,7 +61,7 @@ export default function VerticalVideoFeed({ initialVideos, onLoadMore }: Vertica
   // Intersection Observer to track active video index and trigger autoplay
   useEffect(() => {
     const container = containerRef.current;
-    if (!container) return;
+    if (!container || typeof IntersectionObserver === 'undefined') return;
 
     const observerOptions = {
       root: container,
@@ -225,12 +225,17 @@ export default function VerticalVideoFeed({ initialVideos, onLoadMore }: Vertica
               {isNearActive ? (
                 <video
                   ref={(el) => { videoRefs.current[video.id] = el; }}
-                  src={video.videoUrl}
+                  src={video.videoUrl || '/videos/culinary-fallback.mp4'}
                   loop
                   playsInline
                   muted={isMuted}
                   onClick={toggleMute}
                   className="w-full h-full object-cover cursor-pointer select-none"
+                  onError={(e) => {
+                    if (e.currentTarget.src !== '/videos/culinary-fallback.mp4') {
+                      e.currentTarget.src = '/videos/culinary-fallback.mp4';
+                    }
+                  }}
                 />
               ) : (
                 <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#09090B] text-zinc-500">
