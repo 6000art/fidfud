@@ -26,6 +26,7 @@ import {
   CheckCheck
 } from 'lucide-react';
 import { Restaurant, Dish, Video } from '../types';
+import { safeApiJson } from '../utils/apiHelpers';
 
 interface ImportFromUrlModalProps {
   isOpen: boolean;
@@ -184,14 +185,25 @@ export default function ImportFromUrlModal({
         body: JSON.stringify({ url: normalizedUrl })
       });
 
-      const data = await response.json();
-
       clearTimeout(t1);
       clearTimeout(t2);
       clearTimeout(t3);
       clearTimeout(t4);
 
-      if (response.ok && data.success && data.restaurant) {
+      const apiResult = await safeApiJson(
+        response,
+        'IA Scraper (/api/extract-website)'
+      );
+
+      if (!apiResult.ok) {
+        setIsExtracting(false);
+        setErrorText(apiResult.error || 'Erreur inconnue');
+        return;
+      }
+
+      const data = apiResult.data;
+
+      if (data && data.success && data.restaurant) {
         setCurrentStepIndex(5);
         setProgressPercent(100);
         setStatusText('✨ Vérification réussie ! Synchronisation Firestore et base locale terminée.');
@@ -207,7 +219,10 @@ export default function ImportFromUrlModal({
         }, 500);
       } else {
         setIsExtracting(false);
-        setErrorText(data.error || 'Impossible d\'extraire les données de cette URL. Veuillez vérifier le lien.');
+        const errMsg = (typeof data?.error === 'object' && data?.error?.message)
+          ? data.error.message
+          : (typeof data?.error === 'string' ? data.error : 'Impossible d\'extraire les données de cette URL. Veuillez vérifier le lien.');
+        setErrorText(errMsg);
       }
     } catch (err: any) {
       clearTimeout(t1);
@@ -243,9 +258,20 @@ export default function ImportFromUrlModal({
         body: JSON.stringify({ urls })
       });
 
-      const data = await response.json();
+      const apiResult = await safeApiJson(
+        response,
+        'IA Scraper (/api/extract-websites-bulk)'
+      );
 
-      if (response.ok && data.success) {
+      if (!apiResult.ok) {
+        setIsExtracting(false);
+        setErrorText(apiResult.error || 'Erreur inconnue');
+        return;
+      }
+
+      const data = apiResult.data;
+
+      if (data && data.success) {
         setBulkResults({
           count: data.count,
           restaurants: data.restaurants || [],
@@ -263,7 +289,10 @@ export default function ImportFromUrlModal({
         }
       } else {
         setIsExtracting(false);
-        setErrorText(data.error || 'Erreur lors de l\'extraction en masse.');
+        const errMsg = (typeof data?.error === 'object' && data?.error?.message)
+          ? data.error.message
+          : (typeof data?.error === 'string' ? data.error : 'Erreur lors de l\'extraction en masse.');
+        setErrorText(errMsg);
       }
     } catch (err: any) {
       setIsExtracting(false);

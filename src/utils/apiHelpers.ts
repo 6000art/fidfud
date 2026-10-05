@@ -38,7 +38,9 @@ export async function safeApiJson<T = any>(
   try {
     const parsed = JSON.parse(rawText);
     if (!res.ok) {
-      const message = parsed.error || parsed.message || `Erreur serveur HTTP ${res.status}`;
+      const message = (typeof parsed.error === 'object' && parsed.error?.message)
+        ? `${parsed.error.message} (${parsed.error.code || 'RESTAURANT_IMPORT_FAILED'})`
+        : (parsed.error || parsed.message || `Erreur serveur HTTP ${res.status}`);
       return {
         ok: false,
         status: res.status,

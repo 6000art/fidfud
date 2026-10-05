@@ -9,7 +9,6 @@ import { initializeApp as initAdminApp, cert, getApps as getAdminApps, App as Ad
 import { getAuth as getAdminAuth, Auth as AdminAuth } from 'firebase-admin/auth';
 import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, getDocs, setDoc, doc, deleteDoc, getDoc, setLogLevel, disableNetwork, terminate, writeBatch } from 'firebase/firestore';
-import { PDFParse } from 'pdf-parse';
 
 // Silence Firestore benign idle gRPC stream cancellation and quota retry warnings on the server
 try {
@@ -8312,7 +8311,7 @@ Réponds UNIQUEMENT avec le texte final prêt à être publié, sans guillemets 
     return null;
   }
 
-  // PDF Menu Parser: Downloads and parses PDF menus (e.g. /carte.pdf, /menu.pdf) using pdf-parse
+  // PDF Menu Parser: Downloads and parses PDF menus dynamically (strictly isolated & non-blocking)
   async function parsePdfMenu(pdfBuffer: Buffer, origin: string): Promise<Array<{
     name: string;
     description: string;
@@ -8321,9 +8320,28 @@ Réponds UNIQUEMENT avec le texte final prêt à être publié, sans guillemets 
   }>> {
     const dishes: Array<{ name: string; description: string; price: number; category?: string }> = [];
     try {
-      const parser = new PDFParse({ data: new Uint8Array(pdfBuffer) });
+      // Lazy dynamic import of pdf-parse: never crash the server at boot time on Vercel
+      let PDFParseClass: any = null;
+      try {
+        const pdfModule = await import('pdf-parse');
+        PDFParseClass = pdfModule.PDFParse || (pdfModule as any).default?.PDFParse || (pdfModule as any).default;
+      } catch (importErr: any) {
+        console.warn('[PDF Menu Parser] Dynamic import of pdf-parse failed (non-blocking, skipping PDF):', importErr?.message || importErr);
+        return [];
+      }
+
+      if (!PDFParseClass) {
+        console.warn('[PDF Menu Parser] PDFParse class not available in imported module (non-blocking)');
+        return [];
+      }
+
+      const parser = new PDFParseClass({ data: new Uint8Array(pdfBuffer) });
       const textResult = await parser.getText();
-      await parser.destroy();
+      if (typeof parser.destroy === 'function') {
+        try {
+          await parser.destroy();
+        } catch {}
+      }
 
       const fullText = (textResult && typeof textResult === 'object' && 'text' in textResult) ? (textResult as any).text : String(textResult || '');
       if (!fullText || fullText.trim().length < 10) return dishes;
@@ -8384,8 +8402,9 @@ Réponds UNIQUEMENT avec le texte final prêt à être publié, sans guillemets 
           }
         }
       }
-    } catch (err) {
-      console.warn('[PDF Menu Parser] Benign error reading PDF:', err);
+    } catch (err: any) {
+      console.warn('[PDF Menu Parser] Non-blocking error reading PDF:', err?.message || err);
+      return [];
     }
     return dishes;
   }
@@ -8895,7 +8914,9 @@ Réponds UNIQUEMENT avec le texte final prêt à être publié, sans guillemets 
     const origin = new URL(cleanUrl).origin;
 
     // Step 1: Crawl Homepage
+    console.log(`[WebsiteScraper] FETCH_HOME: ${cleanUrl}`);
     const mainPage = await parsePageContent(cleanUrl, false);
+    console.log(`[WebsiteScraper] HOME_OK: "${mainPage.title || mainPage.siteName || 'Page accueil'}" (${mainPage.dishes.length} plats détectés dans le DOM)`);
     const dataSources: string[] = ['homepage'];
 
     // Step 2: Categorize and select prioritized same-domain subpages (Up to 6-8 pages max)
@@ -8932,7 +8953,7 @@ Réponds UNIQUEMENT avec le texte final prêt à être publié, sans guillemets 
     // Crawl candidate subpages in parallel batches (Limit max 6-8 subpages to respect Vercel timeouts)
     const subpagesToFetch = Array.from(new Set(prioritySubpages)).slice(0, 8);
     if (subpagesToFetch.length > 0) {
-      console.log(`[Crawler SAME-DOMAIN] Exploring ${subpagesToFetch.length} internal pages for ${cleanUrl}:`, subpagesToFetch);
+      console.log(`[WebsiteScraper] SUBPAGES: exploring ${subpagesToFetch.length} internal pages for ${cleanUrl}`);
 
       // Process in batches of 4
       const batch1 = subpagesToFetch.slice(0, 4);
@@ -8980,11 +9001,16 @@ Réponds UNIQUEMENT avec le texte final prêt à être publié, sans guillemets 
       }
     }
 
+    console.log(`[MenuExtractor] HTML: ${mainPage.dishes.length} authentic dishes identified`);
+
     // Step 3: PDF Menu Parsing if PDF links detected (e.g. /carte.pdf, /menu.pdf)
+    if (mainPage.pdfLinks.length > 0) {
+      console.log(`[MenuExtractor] PDF_DETECTED: found ${mainPage.pdfLinks.length} candidate PDF menu link(s):`, mainPage.pdfLinks);
+    }
     const pdfToFetch = mainPage.pdfLinks.slice(0, 2);
     for (const pdfUrl of pdfToFetch) {
       try {
-        console.log(`[Crawler PDF] Downloading & parsing PDF menu from: ${pdfUrl}`);
+        console.log(`[MenuExtractor] PDF_START: ${pdfUrl}`);
         const pdfRes = await fetch(pdfUrl, {
           signal: AbortSignal.timeout(4500),
           headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/124.0.0.0 Safari/537.36' }
@@ -8992,7 +9018,7 @@ Réponds UNIQUEMENT avec le texte final prêt à être publié, sans guillemets 
         if (pdfRes.ok) {
           const arrayBuf = await pdfRes.arrayBuffer();
           const pdfDishes = await parsePdfMenu(Buffer.from(arrayBuf), origin);
-          console.log(`[Crawler PDF] Extracted ${pdfDishes.length} dishes from PDF: ${pdfUrl}`);
+          console.log(`[MenuExtractor] PDF_SUCCESS: Extracted ${pdfDishes.length} dishes from PDF: ${pdfUrl}`);
           if (pdfDishes.length > 0) {
             dataSources.push(pdfUrl.replace(origin, '') || 'menu.pdf');
             for (const pd of pdfDishes) {
@@ -9001,8 +9027,8 @@ Réponds UNIQUEMENT avec le texte final prêt à être publié, sans guillemets 
             }
           }
         }
-      } catch (pdfErr) {
-        console.warn(`[Crawler PDF] Failed to fetch or parse PDF ${pdfUrl}:`, pdfErr);
+      } catch (pdfErr: any) {
+        console.warn(`[MenuExtractor] PDF_FAILED: ${pdfUrl} (non-blocking):`, pdfErr?.message || pdfErr);
       }
     }
 
@@ -9036,13 +9062,15 @@ Réponds UNIQUEMENT avec le texte final prêt à être publié, sans guillemets 
     countVideos: number;
     message: string;
   }> {
-    const scraped = await scrapeUrlMetadata(rawUrl);
-    const url = scraped.url || rawUrl;
+    console.log(`[RestaurantImport] START for URL: ${rawUrl}`);
+    try {
+      const scraped = await scrapeUrlMetadata(rawUrl);
+      const url = scraped.url || rawUrl;
 
-    let extractedData: any = null;
+      let extractedData: any = null;
 
-    // AI prompt for Gemini with STRICT MANDATE: Real data or null
-    const prompt = `You are the Lead Culinary AI Data Extractor for "Fidfud", a premier geolocated video-first food delivery and restaurant discovery app.
+      // AI prompt for Gemini with STRICT MANDATE: Real data or null
+      const prompt = `You are the Lead Culinary AI Data Extractor for "Fidfud", a premier geolocated video-first food delivery and restaurant discovery app.
 Your task is to analyze the provided scraped website metadata and construct a truthful, authentic restaurant profile.
 CRITICAL MANDATE:
 1. NEVER INVENT fake restaurants, fake dishes, fake phone numbers, fake emails, or fake addresses.
@@ -9100,354 +9128,406 @@ Return a valid JSON object matching:
   ]
 }`;
 
-    const aiResponse = await safeGenerateContent({
-      model: 'gemini-3.8-flash',
-      contents: prompt,
-      config: { responseMimeType: 'application/json' }
-    });
-
-    if (aiResponse.success && aiResponse.text) {
-      try {
-        extractedData = JSON.parse(aiResponse.text.trim());
-      } catch {
-        extractedData = null;
-      }
-    }
-
-    // Direct faithful construction if Gemini is unauthenticated or unavailable
-    if (!extractedData) {
-      const brand = scraped.cleanName || scraped.siteName || (scraped.title ? scraped.title.split(/[-|—•]/)[0].trim() : 'Restaurant');
-      extractedData = {
-        name: brand,
-        shortName: brand.split(/[-|—]/)[0].trim(),
-        address: scraped.addressHint || null,
-        postalCode: scraped.postalCodeHint || null,
-        city: scraped.cityHint || null,
-        slogan: scraped.description ? (scraped.description.slice(0, 95) + ' ✨') : undefined,
-        description: scraped.description || scraped.extractedBodyText.slice(0, 350) || undefined,
-        category: scraped.inferredCategory || 'Gourmet',
-        categories: scraped.inferredCategories || [scraped.inferredCategory || 'Gourmet'],
-        logoUrl: scraped.logoUrl || null,
-        bannerUrl: scraped.bannerUrl || null,
-        email: scraped.emailHint || null,
-        phone: scraped.phoneHint || null,
-        openingHours: scraped.openingHoursHint || null,
-        dishes: scraped.dishes // STRICT: only real dishes, NO invented fallbacks!
-      };
-    }
-
-    // Real Geocoding (API Adresse Data Gouv + Nominatim OpenStreetMap)
-    let finalLatitude: number | undefined = undefined;
-    let finalLongitude: number | undefined = undefined;
-    let finalDisposition: string | undefined = undefined;
-
-    if (scraped.geo && scraped.geo.lat && scraped.geo.lng) {
-      finalLatitude = scraped.geo.lat;
-      finalLongitude = scraped.geo.lng;
-      finalDisposition = scraped.addressHint ? scraped.addressHint.split(',')[0].trim() : undefined;
-    } else if (extractedData.address) {
-      const geoResult = await geocodeAddressReal(extractedData.address, extractedData.city || undefined);
-      if (geoResult) {
-        finalLatitude = geoResult.lat;
-        finalLongitude = geoResult.lng;
-        finalDisposition = geoResult.district;
-      }
-    }
-
-    // Real Gallery Photos (deduplicated real photos from website, excluding logo)
-    const galleryPhotos = scraped.photos
-      .filter(p => p !== (extractedData.logoUrl || scraped.logoUrl))
-      .slice(0, 10);
-
-    // Calculate Data Confidence (0 to 100) based on authentic data present
-    let confidenceScore = 20; // base score for crawled domain
-    if (extractedData.address) confidenceScore += 15;
-    if (finalLatitude && finalLongitude) confidenceScore += 20;
-    if (extractedData.phone) confidenceScore += 10;
-    if (extractedData.email) confidenceScore += 5;
-    if (Array.isArray(extractedData.dishes) && extractedData.dishes.length > 0) confidenceScore += 20;
-    if (extractedData.logoUrl) confidenceScore += 5;
-    if (galleryPhotos.length > 0) confidenceScore += 5;
-    const dataConfidence = Math.min(100, confidenceScore);
-
-    // Deduplication check: check if restaurant already exists in database
-    const existingMatch = findExistingRestaurant({
-      ...extractedData,
-      website: url,
-      websiteUrl: url
-    });
-
-    if (existingMatch) {
-      console.log(`[AI Scraper] Found existing matching restaurant "${existingMatch.name}" (${existingMatch.id}). Updating in place.`);
-
-      const mergedRestaurant: Restaurant = mergeRestaurantData(existingMatch, {
-        name: extractedData.name,
-        shortName: extractedData.shortName || extractedData.name,
-        address: extractedData.address || existingMatch.address,
-        postalCode: extractedData.postalCode || scraped.postalCodeHint || existingMatch.postalCode,
-        city: extractedData.city || scraped.cityHint || existingMatch.city,
-        logoUrl: extractedData.logoUrl || existingMatch.logoUrl,
-        bannerUrl: extractedData.bannerUrl || existingMatch.bannerUrl,
-        photos: galleryPhotos.length > 0 ? galleryPhotos : existingMatch.photos,
-        slogan: extractedData.slogan || existingMatch.slogan,
-        email: extractedData.email || existingMatch.email,
-        phone: extractedData.phone || existingMatch.phone,
-        openingHours: extractedData.openingHours || existingMatch.openingHours,
-        description: extractedData.description || existingMatch.description,
-        category: extractedData.category || existingMatch.category,
-        categories: extractedData.categories || existingMatch.categories,
-        dispositionShop: finalDisposition || existingMatch.dispositionShop,
-        latitude: finalLatitude ?? existingMatch.latitude,
-        longitude: finalLongitude ?? existingMatch.longitude,
-        website: url,
-        websiteUrl: url,
-        dataSources: Array.from(new Set([...(existingMatch.dataSources || []), ...scraped.dataSources])),
-        dataConfidence: Math.max(existingMatch.dataConfidence || 0, dataConfidence),
-        lastEnrichedAt: new Date().toISOString()
+      console.log(`[GeminiStructuring] Structuring authentic menu & restaurant profile for: ${url}`);
+      const aiResponse = await safeGenerateContent({
+        model: 'gemini-3.8-flash',
+        contents: prompt,
+        config: { responseMimeType: 'application/json' }
       });
 
-      const rIdx = restaurants.findIndex(r => r.id === existingMatch.id);
-      if (rIdx !== -1) {
-        restaurants[rIdx] = mergedRestaurant;
-      }
-      await persistRestaurantToFirestore(mergedRestaurant);
-
-      // Merge dishes: add only authentic dishes not already present
-      const currentRestDishes = dishes.filter(d => d.restaurantId === existingMatch.id);
-      const addedDishes: Dish[] = [];
-
-      for (const dishData of (extractedData.dishes || [])) {
-        const cleanName = cleanStringForMatching(dishData.name);
-        const dishExists = currentRestDishes.find(d => cleanStringForMatching(d.name) === cleanName);
-        if (!dishExists) {
-          const newDish: Dish = {
-            id: `dish-${Math.random().toString(36).substring(2, 9)}`,
-            restaurantId: existingMatch.id,
-            name: dishData.name,
-            description: dishData.description || '',
-            price: (dishData.price !== undefined && dishData.price !== null && !isNaN(Number(dishData.price)) && Number(dishData.price) > 0) ? Number(dishData.price) : null,
-            isAvailable: true,
-            imageUrl: dishData.imageUrl || undefined,
-            createdAt: new Date().toISOString(),
-            category: dishData.category || 'Plat'
-          };
-          dishes.unshift(newDish);
-          addedDishes.push(newDish);
-          await persistDishToFirestore(newDish);
+      if (aiResponse.success && aiResponse.text) {
+        try {
+          extractedData = JSON.parse(aiResponse.text.trim());
+        } catch {
+          extractedData = null;
         }
       }
 
+      // Direct faithful construction if Gemini is unauthenticated or unavailable
+      if (!extractedData) {
+        const brand = scraped.cleanName || scraped.siteName || (scraped.title ? scraped.title.split(/[-|—•]/)[0].trim() : 'Restaurant');
+        extractedData = {
+          name: brand,
+          shortName: brand.split(/[-|—]/)[0].trim(),
+          address: scraped.addressHint || null,
+          postalCode: scraped.postalCodeHint || null,
+          city: scraped.cityHint || null,
+          slogan: scraped.description ? (scraped.description.slice(0, 95) + ' ✨') : undefined,
+          description: scraped.description || scraped.extractedBodyText.slice(0, 350) || undefined,
+          category: scraped.inferredCategory || 'Gourmet',
+          categories: scraped.inferredCategories || [scraped.inferredCategory || 'Gourmet'],
+          logoUrl: scraped.logoUrl || null,
+          bannerUrl: scraped.bannerUrl || null,
+          email: scraped.emailHint || null,
+          phone: scraped.phoneHint || null,
+          openingHours: scraped.openingHoursHint || null,
+          dishes: scraped.dishes // STRICT: only real dishes, NO invented fallbacks!
+        };
+      }
+
+      // Real Geocoding (API Adresse Data Gouv + Nominatim OpenStreetMap)
+      let finalLatitude: number | undefined = undefined;
+      let finalLongitude: number | undefined = undefined;
+      let finalDisposition: string | undefined = undefined;
+
+      if (scraped.geo && scraped.geo.lat && scraped.geo.lng) {
+        finalLatitude = scraped.geo.lat;
+        finalLongitude = scraped.geo.lng;
+        finalDisposition = scraped.addressHint ? scraped.addressHint.split(',')[0].trim() : undefined;
+      } else if (extractedData.address) {
+        const geoResult = await geocodeAddressReal(extractedData.address, extractedData.city || undefined);
+        if (geoResult) {
+          finalLatitude = geoResult.lat;
+          finalLongitude = geoResult.lng;
+          finalDisposition = geoResult.district;
+        }
+      }
+
+      // Real Gallery Photos (deduplicated real photos from website, excluding logo)
+      const galleryPhotos = scraped.photos
+        .filter(p => p !== (extractedData.logoUrl || scraped.logoUrl))
+        .slice(0, 10);
+
+      // Calculate Data Confidence (0 to 100) based on authentic data present
+      let confidenceScore = 20; // base score for crawled domain
+      if (extractedData.address) confidenceScore += 15;
+      if (finalLatitude && finalLongitude) confidenceScore += 20;
+      if (extractedData.phone) confidenceScore += 10;
+      if (extractedData.email) confidenceScore += 5;
+      if (Array.isArray(extractedData.dishes) && extractedData.dishes.length > 0) confidenceScore += 20;
+      if (extractedData.logoUrl) confidenceScore += 5;
+      if (galleryPhotos.length > 0) confidenceScore += 5;
+      const dataConfidence = Math.min(100, confidenceScore);
+
+      // Deduplication check: check if restaurant already exists in database
+      const existingMatch = findExistingRestaurant({
+        ...extractedData,
+        website: url,
+        websiteUrl: url
+      });
+
+      if (existingMatch) {
+        console.log(`[AI Scraper] Found existing matching restaurant "${existingMatch.name}" (${existingMatch.id}). Updating in place.`);
+
+        const mergedRestaurant: Restaurant = mergeRestaurantData(existingMatch, {
+          name: extractedData.name,
+          shortName: extractedData.shortName || extractedData.name,
+          address: extractedData.address || existingMatch.address,
+          postalCode: extractedData.postalCode || scraped.postalCodeHint || existingMatch.postalCode,
+          city: extractedData.city || scraped.cityHint || existingMatch.city,
+          logoUrl: extractedData.logoUrl || existingMatch.logoUrl,
+          bannerUrl: extractedData.bannerUrl || existingMatch.bannerUrl,
+          photos: galleryPhotos.length > 0 ? galleryPhotos : existingMatch.photos,
+          slogan: extractedData.slogan || existingMatch.slogan,
+          email: extractedData.email || existingMatch.email,
+          phone: extractedData.phone || existingMatch.phone,
+          openingHours: extractedData.openingHours || existingMatch.openingHours,
+          description: extractedData.description || existingMatch.description,
+          category: extractedData.category || existingMatch.category,
+          categories: extractedData.categories || existingMatch.categories,
+          dispositionShop: finalDisposition || existingMatch.dispositionShop,
+          latitude: finalLatitude ?? existingMatch.latitude,
+          longitude: finalLongitude ?? existingMatch.longitude,
+          website: url,
+          websiteUrl: url,
+          dataSources: Array.from(new Set([...(existingMatch.dataSources || []), ...scraped.dataSources])),
+          dataConfidence: Math.max(existingMatch.dataConfidence || 0, dataConfidence),
+          lastEnrichedAt: new Date().toISOString()
+        });
+
+        const rIdx = restaurants.findIndex(r => r.id === existingMatch.id);
+        if (rIdx !== -1) {
+          restaurants[rIdx] = mergedRestaurant;
+        }
+
+        console.log(`[FirestorePersist] Persisting merged restaurant "${mergedRestaurant.name}" to Firestore...`);
+        await persistRestaurantToFirestore(mergedRestaurant);
+
+        // Merge dishes: add only authentic dishes not already present
+        const currentRestDishes = dishes.filter(d => d.restaurantId === existingMatch.id);
+        const addedDishes: Dish[] = [];
+
+        for (const dishData of (extractedData.dishes || [])) {
+          const cleanName = cleanStringForMatching(dishData.name);
+          const dishExists = currentRestDishes.find(d => cleanStringForMatching(d.name) === cleanName);
+          if (!dishExists) {
+            const newDish: Dish = {
+              id: `dish-${Math.random().toString(36).substring(2, 9)}`,
+              restaurantId: existingMatch.id,
+              name: dishData.name,
+              description: dishData.description || '',
+              price: (dishData.price !== undefined && dishData.price !== null && !isNaN(Number(dishData.price)) && Number(dishData.price) > 0) ? Number(dishData.price) : null,
+              isAvailable: true,
+              imageUrl: dishData.imageUrl || undefined,
+              createdAt: new Date().toISOString(),
+              category: dishData.category || 'Plat'
+            };
+            dishes.unshift(newDish);
+            addedDishes.push(newDish);
+            await persistDishToFirestore(newDish);
+          }
+        }
+
+        saveData();
+
+        const allDishes = dishes.filter(d => d.restaurantId === existingMatch.id);
+        const allVideos = videos.filter(v => v.restaurantId === existingMatch.id);
+
+        console.log(`[RestaurantImport] SUCCESS: Enriched restaurant "${mergedRestaurant.name}" (${addedDishes.length} new dishes, confidence: ${mergedRestaurant.dataConfidence}%)`);
+
+        return {
+          restaurant: mergedRestaurant,
+          dishes: allDishes,
+          videos: allVideos,
+          isUpdated: true,
+          countDishes: allDishes.length,
+          countVideos: allVideos.length,
+          message: `Le restaurant "${mergedRestaurant.name}" a été enrichi avec succès (${addedDishes.length} nouveaux plats réels ajoutés, photos: ${galleryPhotos.length}, géolocalisation: ${finalDisposition || 'Actualisée'}).`
+        };
+      }
+
+      // Create fresh restaurant object with strictly real data (no placeholders)
+      const newRestId = `rest-${Math.random().toString(36).substring(2, 9)}`;
+      const newRestaurant: Restaurant = {
+        id: newRestId,
+        userId: 'usr-admin-1',
+        name: extractedData.name,
+        shortName: extractedData.shortName || extractedData.name,
+        address: extractedData.address || '',
+        postalCode: extractedData.postalCode || scraped.postalCodeHint || undefined,
+        city: extractedData.city || scraped.cityHint || undefined,
+        commissionRateDelivery: 15,
+        commissionRateCollect: 5,
+        stripeAccountId: `acct_${Math.random().toString(36).substring(2, 9).toUpperCase()}`,
+        logoUrl: extractedData.logoUrl || scraped.logoUrl || undefined,
+        bannerUrl: extractedData.bannerUrl || scraped.bannerUrl || undefined,
+        photos: galleryPhotos.length > 0 ? galleryPhotos : undefined,
+        slogan: extractedData.slogan || undefined,
+        isCertified: true,
+        subscriptionTier: (extractedData.subscriptionTier as any) || 'pro',
+        promoMessage: 'Bienvenue chez ' + extractedData.name + ' ! Découvrez notre carte authentique.',
+        countdownMinutes: Math.floor(Math.random() * 10) + 5,
+        countdownText: 'Préparation minute de votre commande',
+        likesReceived: Math.floor(Math.random() * 150) + 20,
+        pointsReceived: Math.floor(Math.random() * 100) + 15,
+        createdAt: new Date().toISOString(),
+        email: extractedData.email || undefined,
+        phone: extractedData.phone || undefined,
+        openingHours: extractedData.openingHours || scraped.openingHoursHint || undefined,
+        description: extractedData.description || extractedData.slogan || undefined,
+        category: extractedData.category || 'Français',
+        categories: extractedData.categories || [extractedData.category || 'Français'],
+        isFavorite: true,
+        dispositionShop: finalDisposition || undefined,
+        latitude: finalLatitude ?? undefined,
+        longitude: finalLongitude ?? undefined,
+        website: url,
+        websiteUrl: url,
+        isOrderingEnabled: true,
+        isPublished: true,
+        dataSources: scraped.dataSources,
+        dataConfidence,
+        lastEnrichedAt: new Date().toISOString(),
+        rating: 4.9,
+        reviewCount: 95
+      };
+
+      restaurants.unshift(newRestaurant);
+      console.log(`[FirestorePersist] Persisting new restaurant "${newRestaurant.name}" to Firestore...`);
+      await persistRestaurantToFirestore(newRestaurant);
+
+      // Add only real extracted dishes (dishes will be empty if none found)
+      const addedDishes: Dish[] = [];
+      for (const dishData of (extractedData.dishes || [])) {
+        const newDish: Dish = {
+          id: `dish-${Math.random().toString(36).substring(2, 9)}`,
+          restaurantId: newRestId,
+          name: dishData.name,
+          description: dishData.description || '',
+          price: (dishData.price !== undefined && dishData.price !== null && !isNaN(Number(dishData.price)) && Number(dishData.price) > 0) ? Number(dishData.price) : null,
+          isAvailable: true,
+          imageUrl: dishData.imageUrl || undefined,
+          createdAt: new Date().toISOString(),
+          category: dishData.category || 'Plat'
+        };
+        dishes.unshift(newDish);
+        addedDishes.push(newDish);
+        await persistDishToFirestore(newDish);
+      }
+
+      // Video Coverage: attach ambient culinary video reel for FIDFUD feed immersion
+      const catLower = (newRestaurant.category + ' ' + (newRestaurant.slogan || '') + ' ' + url).toLowerCase();
+      let matchedVideos = AVAILABLE_FOOD_VIDEOS.filter(v => {
+        if (catLower.includes('pizz') || catLower.includes('ital')) return v.category === 'pizza';
+        if (catLower.includes('burg') || catLower.includes('smash') || catLower.includes('street')) return v.category === 'burger_meat';
+        if (catLower.includes('sush') || catLower.includes('ramen') || catLower.includes('asia') || catLower.includes('japon')) return v.category === 'sushi_japanese' || v.category === 'soup_ramen';
+        if (catLower.includes('caf') || catLower.includes('pâtiss') || catLower.includes('dessert') || catLower.includes('sucr')) return v.category === 'dessert_sweet';
+        if (catLower.includes('cocktail') || catLower.includes('bar') || catLower.includes('vin')) return v.category === 'wine_drinks' || v.category === 'cocktails_bar';
+        return v.category === 'french_gourmet' || v.category === 'cooking_chef';
+      });
+
+      if (matchedVideos.length === 0) {
+        matchedVideos = [AVAILABLE_FOOD_VIDEOS[11], AVAILABLE_FOOD_VIDEOS[12], AVAILABLE_FOOD_VIDEOS[0]];
+      }
+
+      const createdVideos: Video[] = [];
+      const mainVid = matchedVideos[0] || AVAILABLE_FOOD_VIDEOS[11];
+      const video1: Video = {
+        id: `vid-${Math.random().toString(36).substring(2, 9)}`,
+        restaurantId: newRestId,
+        videoUrl: mainVid.url,
+        associatedDishId: addedDishes[0]?.id || undefined,
+        title: `🔥 NOUVEAU SUR FIDFUD : Découvrez ${newRestaurant.name} ! ${newRestaurant.slogan || ''}`,
+        likesCount: Math.floor(Math.random() * 250) + 50,
+        createdAt: new Date().toISOString()
+      };
+      videos.unshift(video1);
+      createdVideos.push(video1);
+      await persistVideoToFirestore(video1);
+
       saveData();
 
-      const allDishes = dishes.filter(d => d.restaurantId === existingMatch.id);
-      const allVideos = videos.filter(v => v.restaurantId === existingMatch.id);
+      console.log(`[RestaurantImport] SUCCESS: Created restaurant "${newRestaurant.name}" with ${addedDishes.length} real dishes, ${galleryPhotos.length} photos, geocoded (${newRestaurant.latitude}, ${newRestaurant.longitude}) and video attached.`);
 
       return {
-        restaurant: mergedRestaurant,
-        dishes: allDishes,
-        videos: allVideos,
-        isUpdated: true,
-        countDishes: allDishes.length,
-        countVideos: allVideos.length,
-        message: `Le restaurant "${mergedRestaurant.name}" a été enrichi avec succès (${addedDishes.length} nouveaux plats réels ajoutés, photos: ${galleryPhotos.length}, géolocalisation: ${finalDisposition || 'Actualisée'}).`
+        restaurant: newRestaurant,
+        dishes: addedDishes,
+        videos: createdVideos,
+        isUpdated: false,
+        countDishes: addedDishes.length,
+        countVideos: createdVideos.length,
+        message: `Le restaurant "${newRestaurant.name}" a été extrait avec succès (${addedDishes.length} plats réels, ${galleryPhotos.length} photos réelles, géolocalisation: ${finalDisposition || 'Actualisée'}).`
       };
+    } catch (err: any) {
+      console.error(`[RestaurantImport] FAILED for ${rawUrl}:`, err?.message || err);
+      throw err;
     }
-
-    // Create fresh restaurant object with strictly real data (no placeholders)
-    const newRestId = `rest-${Math.random().toString(36).substring(2, 9)}`;
-    const newRestaurant: Restaurant = {
-      id: newRestId,
-      userId: 'usr-admin-1',
-      name: extractedData.name,
-      shortName: extractedData.shortName || extractedData.name,
-      address: extractedData.address || '',
-      postalCode: extractedData.postalCode || scraped.postalCodeHint || undefined,
-      city: extractedData.city || scraped.cityHint || undefined,
-      commissionRateDelivery: 15,
-      commissionRateCollect: 5,
-      stripeAccountId: `acct_${Math.random().toString(36).substring(2, 9).toUpperCase()}`,
-      logoUrl: extractedData.logoUrl || scraped.logoUrl || undefined,
-      bannerUrl: extractedData.bannerUrl || scraped.bannerUrl || undefined,
-      photos: galleryPhotos.length > 0 ? galleryPhotos : undefined,
-      slogan: extractedData.slogan || undefined,
-      isCertified: true,
-      subscriptionTier: (extractedData.subscriptionTier as any) || 'pro',
-      promoMessage: 'Bienvenue chez ' + extractedData.name + ' ! Découvrez notre carte authentique.',
-      countdownMinutes: Math.floor(Math.random() * 10) + 5,
-      countdownText: 'Préparation minute de votre commande',
-      likesReceived: Math.floor(Math.random() * 150) + 20,
-      pointsReceived: Math.floor(Math.random() * 100) + 15,
-      createdAt: new Date().toISOString(),
-      email: extractedData.email || undefined,
-      phone: extractedData.phone || undefined,
-      openingHours: extractedData.openingHours || scraped.openingHoursHint || undefined,
-      description: extractedData.description || extractedData.slogan || undefined,
-      category: extractedData.category || 'Français',
-      categories: extractedData.categories || [extractedData.category || 'Français'],
-      isFavorite: true,
-      dispositionShop: finalDisposition || undefined,
-      latitude: finalLatitude ?? undefined,
-      longitude: finalLongitude ?? undefined,
-      website: url,
-      websiteUrl: url,
-      isOrderingEnabled: true,
-      isPublished: true,
-      dataSources: scraped.dataSources,
-      dataConfidence,
-      lastEnrichedAt: new Date().toISOString(),
-      rating: 4.9,
-      reviewCount: 95
-    };
-
-    restaurants.unshift(newRestaurant);
-    await persistRestaurantToFirestore(newRestaurant);
-
-    // Add only real extracted dishes (dishes will be empty if none found)
-    const addedDishes: Dish[] = [];
-    for (const dishData of (extractedData.dishes || [])) {
-      const newDish: Dish = {
-        id: `dish-${Math.random().toString(36).substring(2, 9)}`,
-        restaurantId: newRestId,
-        name: dishData.name,
-        description: dishData.description || '',
-        price: (dishData.price !== undefined && dishData.price !== null && !isNaN(Number(dishData.price)) && Number(dishData.price) > 0) ? Number(dishData.price) : null,
-        isAvailable: true,
-        imageUrl: dishData.imageUrl || undefined,
-        createdAt: new Date().toISOString(),
-        category: dishData.category || 'Plat'
-      };
-      dishes.unshift(newDish);
-      addedDishes.push(newDish);
-      await persistDishToFirestore(newDish);
-    }
-
-    // Video Coverage: attach ambient culinary video reel for FIDFUD feed immersion
-    const catLower = (newRestaurant.category + ' ' + (newRestaurant.slogan || '') + ' ' + url).toLowerCase();
-    let matchedVideos = AVAILABLE_FOOD_VIDEOS.filter(v => {
-      if (catLower.includes('pizz') || catLower.includes('ital')) return v.category === 'pizza';
-      if (catLower.includes('burg') || catLower.includes('smash') || catLower.includes('street')) return v.category === 'burger_meat';
-      if (catLower.includes('sush') || catLower.includes('ramen') || catLower.includes('asia') || catLower.includes('japon')) return v.category === 'sushi_japanese' || v.category === 'soup_ramen';
-      if (catLower.includes('caf') || catLower.includes('pâtiss') || catLower.includes('dessert') || catLower.includes('sucr')) return v.category === 'dessert_sweet';
-      if (catLower.includes('cocktail') || catLower.includes('bar') || catLower.includes('vin')) return v.category === 'wine_drinks' || v.category === 'cocktails_bar';
-      return v.category === 'french_gourmet' || v.category === 'cooking_chef';
-    });
-
-    if (matchedVideos.length === 0) {
-      matchedVideos = [AVAILABLE_FOOD_VIDEOS[11], AVAILABLE_FOOD_VIDEOS[12], AVAILABLE_FOOD_VIDEOS[0]];
-    }
-
-    const createdVideos: Video[] = [];
-    const mainVid = matchedVideos[0] || AVAILABLE_FOOD_VIDEOS[11];
-    const video1: Video = {
-      id: `vid-${Math.random().toString(36).substring(2, 9)}`,
-      restaurantId: newRestId,
-      videoUrl: mainVid.url,
-      associatedDishId: addedDishes[0]?.id || undefined,
-      title: `🔥 NOUVEAU SUR FIDFUD : Découvrez ${newRestaurant.name} ! ${newRestaurant.slogan || ''}`,
-      likesCount: Math.floor(Math.random() * 250) + 50,
-      createdAt: new Date().toISOString()
-    };
-    videos.unshift(video1);
-    createdVideos.push(video1);
-    await persistVideoToFirestore(video1);
-
-    saveData();
-
-    console.log(`[AI Scraper SUCCESS] Created restaurant "${newRestaurant.name}" with ${addedDishes.length} real dishes, ${galleryPhotos.length} photos, geocoded (${newRestaurant.latitude}, ${newRestaurant.longitude}) and video attached.`);
-
-    return {
-      restaurant: newRestaurant,
-      dishes: addedDishes,
-      videos: createdVideos,
-      isUpdated: false,
-      countDishes: addedDishes.length,
-      countVideos: createdVideos.length,
-      message: `Le restaurant "${newRestaurant.name}" a été extrait avec succès (${addedDishes.length} plats réels, ${galleryPhotos.length} photos réelles, géolocalisation: ${finalDisposition || 'Actualisée'}).`
-    };
   }
 
   // AI-Powered Restaurant website scraper / extractor (Single & Multi-URL support)
   app.post('/api/extract-website', async (req, res) => {
-    const { url, urls } = req.body;
-    
-    // Check if bulk request was sent to this endpoint
-    const urlList: string[] = [];
-    if (Array.isArray(urls) && urls.length > 0) {
-      urlList.push(...urls);
-    } else if (typeof url === 'string') {
-      const parts = url.split('\n').map(u => u.trim()).filter(Boolean);
-      urlList.push(...parts);
-    }
-
-    if (urlList.length === 0) {
-      return res.status(400).json({ error: 'L\'URL du site web est requise.' });
-    }
-
-    // If multiple URLs provided, run bulk workflow
-    if (urlList.length > 1) {
-      try {
-        console.log(`[AI Scraper] Bulk extraction started for ${urlList.length} URLs.`);
-        const results: any[] = [];
-        for (const singleUrl of urlList) {
-          try {
-            const out = await extractSingleRestaurantCore(singleUrl);
-            results.push({ url: singleUrl, success: true, ...out });
-          } catch (err: any) {
-            console.error(`[AI Scraper] Error extracting ${singleUrl}:`, err);
-            results.push({ url: singleUrl, success: false, error: err.message });
-          }
-        }
-        const successful = results.filter(r => r.success);
-        return res.status(200).json({
-          success: true,
-          isBulk: true,
-          count: successful.length,
-          totalRequested: urlList.length,
-          results,
-          restaurants: successful.map(s => s.restaurant),
-          message: `${successful.length} restaurant(s) extrait(s) et synchronisé(s) avec succès.`
-        });
-      } catch (bulkErr: any) {
-        return res.status(500).json({ error: 'Erreur lors de l\'extraction en masse : ' + bulkErr.message });
-      }
-    }
-
-    // Single URL workflow
-    const singleUrl = urlList[0];
+    res.setHeader('Content-Type', 'application/json');
     try {
-      console.log(`[AI Scraper] Deep extraction starting for: ${singleUrl}`);
-      const result = await extractSingleRestaurantCore(singleUrl);
-      return res.status(result.isUpdated ? 200 : 201).json({
-        success: true,
-        ...result
+      const { url, urls } = req.body || {};
+      
+      // Check if bulk request was sent to this endpoint
+      const urlList: string[] = [];
+      if (Array.isArray(urls) && urls.length > 0) {
+        urlList.push(...urls);
+      } else if (typeof url === 'string') {
+        const parts = url.split('\n').map(u => u.trim()).filter(Boolean);
+        urlList.push(...parts);
+      }
+
+      if (urlList.length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'INVALID_URL',
+            message: 'L\'URL du site web est requise.',
+            step: 'validation'
+          }
+        });
+      }
+
+      // If multiple URLs provided, run bulk workflow
+      if (urlList.length > 1) {
+        try {
+          console.log(`[AI Scraper] Bulk extraction started for ${urlList.length} URLs.`);
+          const results: any[] = [];
+          for (const singleUrl of urlList) {
+            try {
+              const out = await extractSingleRestaurantCore(singleUrl);
+              results.push({ url: singleUrl, success: true, ...out });
+            } catch (err: any) {
+              console.error(`[AI Scraper] Error extracting ${singleUrl}:`, err);
+              results.push({ url: singleUrl, success: false, error: err?.message || 'Échec de l\'extraction' });
+            }
+          }
+          const successful = results.filter(r => r.success);
+          return res.status(200).json({
+            success: true,
+            isBulk: true,
+            count: successful.length,
+            totalRequested: urlList.length,
+            results,
+            restaurants: successful.map(s => s.restaurant),
+            message: `${successful.length} restaurant(s) extrait(s) et synchronisé(s) avec succès.`
+          });
+        } catch (bulkErr: any) {
+          return res.status(500).json({
+            success: false,
+            error: {
+              code: 'RESTAURANT_IMPORT_FAILED',
+              message: 'Erreur lors de l\'extraction en masse : ' + (bulkErr?.message || 'Erreur interne'),
+              step: 'bulk_workflow'
+            }
+          });
+        }
+      }
+
+      // Single URL workflow
+      const singleUrl = urlList[0];
+      try {
+        console.log(`[AI Scraper] Deep extraction starting for: ${singleUrl}`);
+        const result = await extractSingleRestaurantCore(singleUrl);
+        return res.status(result.isUpdated ? 200 : 201).json({
+          success: true,
+          ...result
+        });
+      } catch (err: any) {
+        console.error('[AI Scraper ERROR]', err);
+        return res.status(500).json({
+          success: false,
+          error: {
+            code: 'RESTAURANT_IMPORT_FAILED',
+            message: 'Erreur lors de l\'extraction par l\'IA : ' + (err?.message || 'Erreur serveur interne'),
+            step: 'extractSingleRestaurantCore'
+          }
+        });
+      }
+    } catch (fatalErr: any) {
+      console.error('[AI Scraper FATAL ERROR]', fatalErr);
+      return res.status(500).json({
+        success: false,
+        error: {
+          code: 'RESTAURANT_IMPORT_FAILED',
+          message: 'Erreur critique du serveur d\'extraction : ' + (fatalErr?.message || 'Erreur inattendue'),
+          step: 'request_guard'
+        }
       });
-    } catch (err: any) {
-      console.error('[AI Scraper ERROR]', err);
-      res.status(500).json({ error: 'Erreur lors de l\'extraction par l\'IA : ' + err.message });
     }
   });
 
   // Dedicated Bulk Restaurant Website Extractor
   app.post('/api/extract-websites-bulk', async (req, res) => {
-    const { urls, urlsText } = req.body;
-    const urlList: string[] = [];
-
-    if (Array.isArray(urls)) {
-      urlList.push(...urls.map(u => String(u).trim()).filter(Boolean));
-    }
-    if (typeof urlsText === 'string') {
-      const fromText = urlsText.split('\n').map(u => u.trim()).filter(Boolean);
-      urlList.push(...fromText);
-    }
-
-    // Deduplicate incoming list
-    const cleanList = Array.from(new Set(urlList));
-
-    if (cleanList.length === 0) {
-      return res.status(400).json({ error: 'Veuillez fournir au moins une URL de site web.' });
-    }
-
+    res.setHeader('Content-Type', 'application/json');
     try {
+      const { urls, urlsText } = req.body || {};
+      const urlList: string[] = [];
+
+      if (Array.isArray(urls)) {
+        urlList.push(...urls.map(u => String(u).trim()).filter(Boolean));
+      }
+      if (typeof urlsText === 'string') {
+        const fromText = urlsText.split('\n').map(u => u.trim()).filter(Boolean);
+        urlList.push(...fromText);
+      }
+
+      // Deduplicate incoming list
+      const cleanList = Array.from(new Set(urlList));
+
+      if (cleanList.length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'INVALID_URL',
+            message: 'Veuillez fournir au moins une URL de site web.',
+            step: 'validation'
+          }
+        });
+      }
+
       console.log(`[AI Scraper Bulk API] Processing batch of ${cleanList.length} restaurants...`);
       const results: any[] = [];
       let totalDishesCreated = 0;
@@ -9482,7 +9562,7 @@ Return a valid JSON object matching:
 
       const successList = results.filter(r => r.success);
 
-      res.status(200).json({
+      return res.status(200).json({
         success: true,
         count: successList.length,
         totalRequested: cleanList.length,
@@ -9495,7 +9575,14 @@ Return a valid JSON object matching:
 
     } catch (err: any) {
       console.error('[AI Scraper Bulk Error]', err);
-      res.status(500).json({ error: 'Erreur lors du traitement en masse : ' + err.message });
+      return res.status(500).json({
+        success: false,
+        error: {
+          code: 'RESTAURANT_IMPORT_FAILED',
+          message: 'Erreur lors du traitement en masse : ' + (err?.message || 'Erreur interne'),
+          step: 'extractWebsitesBulk'
+        }
+      });
     }
   });
 
@@ -10912,16 +10999,8 @@ Return strictly a JSON array of up to 6 real restaurants matching this schema:
     }
   }
 
-  // Only start the HTTP listener if executed directly (e.g. tsx server.ts or node server.js), NOT when imported in Vercel
-  const isDirectExecution = Boolean(
-    process.argv[1] && (
-      process.argv[1].endsWith('server.ts') ||
-      process.argv[1].endsWith('server.js') ||
-      process.argv[1].endsWith('server.cjs')
-    )
-  );
-
-  if (isDirectExecution && !process.env.VERCEL) {
+  // Only start the HTTP listener in standalone/dev mode, NOT when imported in Vercel Serverless
+  if (!process.env.VERCEL) {
     startStandaloneServer().catch(err => {
       console.error('Failed to start standalone server:', err);
     });

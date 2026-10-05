@@ -10,7 +10,6 @@ import { initializeApp as initAdminApp, cert, getApps as getAdminApps } from "fi
 import { getAuth as getAdminAuth } from "firebase-admin/auth";
 import { initializeApp } from "firebase/app";
 import { getFirestore, collection, getDocs, setDoc, doc, deleteDoc, getDoc, setLogLevel, disableNetwork, writeBatch } from "firebase/firestore";
-import { PDFParse } from "pdf-parse";
 try {
   setLogLevel("silent");
 } catch (e) {
@@ -7001,9 +7000,26 @@ async function geocodeAddressReal(address, city) {
 async function parsePdfMenu(pdfBuffer, origin) {
   const dishes2 = [];
   try {
-    const parser = new PDFParse({ data: new Uint8Array(pdfBuffer) });
+    let PDFParseClass = null;
+    try {
+      const pdfModule = await import("pdf-parse");
+      PDFParseClass = pdfModule.PDFParse || pdfModule.default?.PDFParse || pdfModule.default;
+    } catch (importErr) {
+      console.warn("[PDF Menu Parser] Dynamic import of pdf-parse failed (non-blocking, skipping PDF):", importErr?.message || importErr);
+      return [];
+    }
+    if (!PDFParseClass) {
+      console.warn("[PDF Menu Parser] PDFParse class not available in imported module (non-blocking)");
+      return [];
+    }
+    const parser = new PDFParseClass({ data: new Uint8Array(pdfBuffer) });
     const textResult = await parser.getText();
-    await parser.destroy();
+    if (typeof parser.destroy === "function") {
+      try {
+        await parser.destroy();
+      } catch {
+      }
+    }
     const fullText = textResult && typeof textResult === "object" && "text" in textResult ? textResult.text : String(textResult || "");
     if (!fullText || fullText.trim().length < 10) return dishes2;
     const lines = fullText.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
@@ -7055,7 +7071,8 @@ async function parsePdfMenu(pdfBuffer, origin) {
       }
     }
   } catch (err) {
-    console.warn("[PDF Menu Parser] Benign error reading PDF:", err);
+    console.warn("[PDF Menu Parser] Non-blocking error reading PDF:", err?.message || err);
+    return [];
   }
   return dishes2;
 }
@@ -7445,7 +7462,9 @@ async function scrapeUrlMetadata(rawUrl) {
   } catch {
   }
   const origin = new URL(cleanUrl).origin;
+  console.log(`[WebsiteScraper] FETCH_HOME: ${cleanUrl}`);
   const mainPage = await parsePageContent(cleanUrl, false);
+  console.log(`[WebsiteScraper] HOME_OK: "${mainPage.title || mainPage.siteName || "Page accueil"}" (${mainPage.dishes.length} plats d\xE9tect\xE9s dans le DOM)`);
   const dataSources = ["homepage"];
   const prioritySubpages = [];
   const menuLinks = mainPage.internalLinks.filter((l) => {
@@ -7474,7 +7493,7 @@ async function scrapeUrlMetadata(rawUrl) {
   }
   const subpagesToFetch = Array.from(new Set(prioritySubpages)).slice(0, 8);
   if (subpagesToFetch.length > 0) {
-    console.log(`[Crawler SAME-DOMAIN] Exploring ${subpagesToFetch.length} internal pages for ${cleanUrl}:`, subpagesToFetch);
+    console.log(`[WebsiteScraper] SUBPAGES: exploring ${subpagesToFetch.length} internal pages for ${cleanUrl}`);
     const batch1 = subpagesToFetch.slice(0, 4);
     const batch2 = subpagesToFetch.slice(4, 8);
     const batchResults1 = await Promise.allSettled(batch1.map((u) => parsePageContent(u, true)));
@@ -7508,10 +7527,14 @@ async function scrapeUrlMetadata(rawUrl) {
       }
     }
   }
+  console.log(`[MenuExtractor] HTML: ${mainPage.dishes.length} authentic dishes identified`);
+  if (mainPage.pdfLinks.length > 0) {
+    console.log(`[MenuExtractor] PDF_DETECTED: found ${mainPage.pdfLinks.length} candidate PDF menu link(s):`, mainPage.pdfLinks);
+  }
   const pdfToFetch = mainPage.pdfLinks.slice(0, 2);
   for (const pdfUrl of pdfToFetch) {
     try {
-      console.log(`[Crawler PDF] Downloading & parsing PDF menu from: ${pdfUrl}`);
+      console.log(`[MenuExtractor] PDF_START: ${pdfUrl}`);
       const pdfRes = await fetch(pdfUrl, {
         signal: AbortSignal.timeout(4500),
         headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/124.0.0.0 Safari/537.36" }
@@ -7519,7 +7542,7 @@ async function scrapeUrlMetadata(rawUrl) {
       if (pdfRes.ok) {
         const arrayBuf = await pdfRes.arrayBuffer();
         const pdfDishes = await parsePdfMenu(Buffer.from(arrayBuf), origin);
-        console.log(`[Crawler PDF] Extracted ${pdfDishes.length} dishes from PDF: ${pdfUrl}`);
+        console.log(`[MenuExtractor] PDF_SUCCESS: Extracted ${pdfDishes.length} dishes from PDF: ${pdfUrl}`);
         if (pdfDishes.length > 0) {
           dataSources.push(pdfUrl.replace(origin, "") || "menu.pdf");
           for (const pd of pdfDishes) {
@@ -7529,7 +7552,7 @@ async function scrapeUrlMetadata(rawUrl) {
         }
       }
     } catch (pdfErr) {
-      console.warn(`[Crawler PDF] Failed to fetch or parse PDF ${pdfUrl}:`, pdfErr);
+      console.warn(`[MenuExtractor] PDF_FAILED: ${pdfUrl} (non-blocking):`, pdfErr?.message || pdfErr);
     }
   }
   if (!mainPage.bannerUrl && mainPage.photos.length > 0) {
@@ -7549,10 +7572,12 @@ async function scrapeUrlMetadata(rawUrl) {
   };
 }
 async function extractSingleRestaurantCore(rawUrl) {
-  const scraped = await scrapeUrlMetadata(rawUrl);
-  const url = scraped.url || rawUrl;
-  let extractedData = null;
-  const prompt = `You are the Lead Culinary AI Data Extractor for "Fidfud", a premier geolocated video-first food delivery and restaurant discovery app.
+  console.log(`[RestaurantImport] START for URL: ${rawUrl}`);
+  try {
+    const scraped = await scrapeUrlMetadata(rawUrl);
+    const url = scraped.url || rawUrl;
+    let extractedData = null;
+    const prompt = `You are the Lead Culinary AI Data Extractor for "Fidfud", a premier geolocated video-first food delivery and restaurant discovery app.
 Your task is to analyze the provided scraped website metadata and construct a truthful, authentic restaurant profile.
 CRITICAL MANDATE:
 1. NEVER INVENT fake restaurants, fake dishes, fake phone numbers, fake emails, or fake addresses.
@@ -7609,304 +7634,354 @@ Return a valid JSON object matching:
     }
   ]
 }`;
-  const aiResponse = await safeGenerateContent({
-    model: "gemini-3.8-flash",
-    contents: prompt,
-    config: { responseMimeType: "application/json" }
-  });
-  if (aiResponse.success && aiResponse.text) {
-    try {
-      extractedData = JSON.parse(aiResponse.text.trim());
-    } catch {
-      extractedData = null;
-    }
-  }
-  if (!extractedData) {
-    const brand = scraped.cleanName || scraped.siteName || (scraped.title ? scraped.title.split(/[-|—•]/)[0].trim() : "Restaurant");
-    extractedData = {
-      name: brand,
-      shortName: brand.split(/[-|—]/)[0].trim(),
-      address: scraped.addressHint || null,
-      postalCode: scraped.postalCodeHint || null,
-      city: scraped.cityHint || null,
-      slogan: scraped.description ? scraped.description.slice(0, 95) + " \u2728" : void 0,
-      description: scraped.description || scraped.extractedBodyText.slice(0, 350) || void 0,
-      category: scraped.inferredCategory || "Gourmet",
-      categories: scraped.inferredCategories || [scraped.inferredCategory || "Gourmet"],
-      logoUrl: scraped.logoUrl || null,
-      bannerUrl: scraped.bannerUrl || null,
-      email: scraped.emailHint || null,
-      phone: scraped.phoneHint || null,
-      openingHours: scraped.openingHoursHint || null,
-      dishes: scraped.dishes
-      // STRICT: only real dishes, NO invented fallbacks!
-    };
-  }
-  let finalLatitude = void 0;
-  let finalLongitude = void 0;
-  let finalDisposition = void 0;
-  if (scraped.geo && scraped.geo.lat && scraped.geo.lng) {
-    finalLatitude = scraped.geo.lat;
-    finalLongitude = scraped.geo.lng;
-    finalDisposition = scraped.addressHint ? scraped.addressHint.split(",")[0].trim() : void 0;
-  } else if (extractedData.address) {
-    const geoResult = await geocodeAddressReal(extractedData.address, extractedData.city || void 0);
-    if (geoResult) {
-      finalLatitude = geoResult.lat;
-      finalLongitude = geoResult.lng;
-      finalDisposition = geoResult.district;
-    }
-  }
-  const galleryPhotos = scraped.photos.filter((p) => p !== (extractedData.logoUrl || scraped.logoUrl)).slice(0, 10);
-  let confidenceScore = 20;
-  if (extractedData.address) confidenceScore += 15;
-  if (finalLatitude && finalLongitude) confidenceScore += 20;
-  if (extractedData.phone) confidenceScore += 10;
-  if (extractedData.email) confidenceScore += 5;
-  if (Array.isArray(extractedData.dishes) && extractedData.dishes.length > 0) confidenceScore += 20;
-  if (extractedData.logoUrl) confidenceScore += 5;
-  if (galleryPhotos.length > 0) confidenceScore += 5;
-  const dataConfidence = Math.min(100, confidenceScore);
-  const existingMatch = findExistingRestaurant({
-    ...extractedData,
-    website: url,
-    websiteUrl: url
-  });
-  if (existingMatch) {
-    console.log(`[AI Scraper] Found existing matching restaurant "${existingMatch.name}" (${existingMatch.id}). Updating in place.`);
-    const mergedRestaurant = mergeRestaurantData(existingMatch, {
-      name: extractedData.name,
-      shortName: extractedData.shortName || extractedData.name,
-      address: extractedData.address || existingMatch.address,
-      postalCode: extractedData.postalCode || scraped.postalCodeHint || existingMatch.postalCode,
-      city: extractedData.city || scraped.cityHint || existingMatch.city,
-      logoUrl: extractedData.logoUrl || existingMatch.logoUrl,
-      bannerUrl: extractedData.bannerUrl || existingMatch.bannerUrl,
-      photos: galleryPhotos.length > 0 ? galleryPhotos : existingMatch.photos,
-      slogan: extractedData.slogan || existingMatch.slogan,
-      email: extractedData.email || existingMatch.email,
-      phone: extractedData.phone || existingMatch.phone,
-      openingHours: extractedData.openingHours || existingMatch.openingHours,
-      description: extractedData.description || existingMatch.description,
-      category: extractedData.category || existingMatch.category,
-      categories: extractedData.categories || existingMatch.categories,
-      dispositionShop: finalDisposition || existingMatch.dispositionShop,
-      latitude: finalLatitude ?? existingMatch.latitude,
-      longitude: finalLongitude ?? existingMatch.longitude,
-      website: url,
-      websiteUrl: url,
-      dataSources: Array.from(/* @__PURE__ */ new Set([...existingMatch.dataSources || [], ...scraped.dataSources])),
-      dataConfidence: Math.max(existingMatch.dataConfidence || 0, dataConfidence),
-      lastEnrichedAt: (/* @__PURE__ */ new Date()).toISOString()
+    console.log(`[GeminiStructuring] Structuring authentic menu & restaurant profile for: ${url}`);
+    const aiResponse = await safeGenerateContent({
+      model: "gemini-3.8-flash",
+      contents: prompt,
+      config: { responseMimeType: "application/json" }
     });
-    const rIdx = restaurants.findIndex((r) => r.id === existingMatch.id);
-    if (rIdx !== -1) {
-      restaurants[rIdx] = mergedRestaurant;
-    }
-    await persistRestaurantToFirestore(mergedRestaurant);
-    const currentRestDishes = dishes.filter((d) => d.restaurantId === existingMatch.id);
-    const addedDishes2 = [];
-    for (const dishData of extractedData.dishes || []) {
-      const cleanName = cleanStringForMatching(dishData.name);
-      const dishExists = currentRestDishes.find((d) => cleanStringForMatching(d.name) === cleanName);
-      if (!dishExists) {
-        const newDish = {
-          id: `dish-${Math.random().toString(36).substring(2, 9)}`,
-          restaurantId: existingMatch.id,
-          name: dishData.name,
-          description: dishData.description || "",
-          price: dishData.price !== void 0 && dishData.price !== null && !isNaN(Number(dishData.price)) && Number(dishData.price) > 0 ? Number(dishData.price) : null,
-          isAvailable: true,
-          imageUrl: dishData.imageUrl || void 0,
-          createdAt: (/* @__PURE__ */ new Date()).toISOString(),
-          category: dishData.category || "Plat"
-        };
-        dishes.unshift(newDish);
-        addedDishes2.push(newDish);
-        await persistDishToFirestore(newDish);
+    if (aiResponse.success && aiResponse.text) {
+      try {
+        extractedData = JSON.parse(aiResponse.text.trim());
+      } catch {
+        extractedData = null;
       }
     }
-    saveData();
-    const allDishes = dishes.filter((d) => d.restaurantId === existingMatch.id);
-    const allVideos = videos.filter((v) => v.restaurantId === existingMatch.id);
-    return {
-      restaurant: mergedRestaurant,
-      dishes: allDishes,
-      videos: allVideos,
-      isUpdated: true,
-      countDishes: allDishes.length,
-      countVideos: allVideos.length,
-      message: `Le restaurant "${mergedRestaurant.name}" a \xE9t\xE9 enrichi avec succ\xE8s (${addedDishes2.length} nouveaux plats r\xE9els ajout\xE9s, photos: ${galleryPhotos.length}, g\xE9olocalisation: ${finalDisposition || "Actualis\xE9e"}).`
-    };
-  }
-  const newRestId = `rest-${Math.random().toString(36).substring(2, 9)}`;
-  const newRestaurant = {
-    id: newRestId,
-    userId: "usr-admin-1",
-    name: extractedData.name,
-    shortName: extractedData.shortName || extractedData.name,
-    address: extractedData.address || "",
-    postalCode: extractedData.postalCode || scraped.postalCodeHint || void 0,
-    city: extractedData.city || scraped.cityHint || void 0,
-    commissionRateDelivery: 15,
-    commissionRateCollect: 5,
-    stripeAccountId: `acct_${Math.random().toString(36).substring(2, 9).toUpperCase()}`,
-    logoUrl: extractedData.logoUrl || scraped.logoUrl || void 0,
-    bannerUrl: extractedData.bannerUrl || scraped.bannerUrl || void 0,
-    photos: galleryPhotos.length > 0 ? galleryPhotos : void 0,
-    slogan: extractedData.slogan || void 0,
-    isCertified: true,
-    subscriptionTier: extractedData.subscriptionTier || "pro",
-    promoMessage: "Bienvenue chez " + extractedData.name + " ! D\xE9couvrez notre carte authentique.",
-    countdownMinutes: Math.floor(Math.random() * 10) + 5,
-    countdownText: "Pr\xE9paration minute de votre commande",
-    likesReceived: Math.floor(Math.random() * 150) + 20,
-    pointsReceived: Math.floor(Math.random() * 100) + 15,
-    createdAt: (/* @__PURE__ */ new Date()).toISOString(),
-    email: extractedData.email || void 0,
-    phone: extractedData.phone || void 0,
-    openingHours: extractedData.openingHours || scraped.openingHoursHint || void 0,
-    description: extractedData.description || extractedData.slogan || void 0,
-    category: extractedData.category || "Fran\xE7ais",
-    categories: extractedData.categories || [extractedData.category || "Fran\xE7ais"],
-    isFavorite: true,
-    dispositionShop: finalDisposition || void 0,
-    latitude: finalLatitude ?? void 0,
-    longitude: finalLongitude ?? void 0,
-    website: url,
-    websiteUrl: url,
-    isOrderingEnabled: true,
-    isPublished: true,
-    dataSources: scraped.dataSources,
-    dataConfidence,
-    lastEnrichedAt: (/* @__PURE__ */ new Date()).toISOString(),
-    rating: 4.9,
-    reviewCount: 95
-  };
-  restaurants.unshift(newRestaurant);
-  await persistRestaurantToFirestore(newRestaurant);
-  const addedDishes = [];
-  for (const dishData of extractedData.dishes || []) {
-    const newDish = {
-      id: `dish-${Math.random().toString(36).substring(2, 9)}`,
-      restaurantId: newRestId,
-      name: dishData.name,
-      description: dishData.description || "",
-      price: dishData.price !== void 0 && dishData.price !== null && !isNaN(Number(dishData.price)) && Number(dishData.price) > 0 ? Number(dishData.price) : null,
-      isAvailable: true,
-      imageUrl: dishData.imageUrl || void 0,
-      createdAt: (/* @__PURE__ */ new Date()).toISOString(),
-      category: dishData.category || "Plat"
-    };
-    dishes.unshift(newDish);
-    addedDishes.push(newDish);
-    await persistDishToFirestore(newDish);
-  }
-  const catLower = (newRestaurant.category + " " + (newRestaurant.slogan || "") + " " + url).toLowerCase();
-  let matchedVideos = AVAILABLE_FOOD_VIDEOS.filter((v) => {
-    if (catLower.includes("pizz") || catLower.includes("ital")) return v.category === "pizza";
-    if (catLower.includes("burg") || catLower.includes("smash") || catLower.includes("street")) return v.category === "burger_meat";
-    if (catLower.includes("sush") || catLower.includes("ramen") || catLower.includes("asia") || catLower.includes("japon")) return v.category === "sushi_japanese" || v.category === "soup_ramen";
-    if (catLower.includes("caf") || catLower.includes("p\xE2tiss") || catLower.includes("dessert") || catLower.includes("sucr")) return v.category === "dessert_sweet";
-    if (catLower.includes("cocktail") || catLower.includes("bar") || catLower.includes("vin")) return v.category === "wine_drinks" || v.category === "cocktails_bar";
-    return v.category === "french_gourmet" || v.category === "cooking_chef";
-  });
-  if (matchedVideos.length === 0) {
-    matchedVideos = [AVAILABLE_FOOD_VIDEOS[11], AVAILABLE_FOOD_VIDEOS[12], AVAILABLE_FOOD_VIDEOS[0]];
-  }
-  const createdVideos = [];
-  const mainVid = matchedVideos[0] || AVAILABLE_FOOD_VIDEOS[11];
-  const video1 = {
-    id: `vid-${Math.random().toString(36).substring(2, 9)}`,
-    restaurantId: newRestId,
-    videoUrl: mainVid.url,
-    associatedDishId: addedDishes[0]?.id || void 0,
-    title: `\u{1F525} NOUVEAU SUR FIDFUD : D\xE9couvrez ${newRestaurant.name} ! ${newRestaurant.slogan || ""}`,
-    likesCount: Math.floor(Math.random() * 250) + 50,
-    createdAt: (/* @__PURE__ */ new Date()).toISOString()
-  };
-  videos.unshift(video1);
-  createdVideos.push(video1);
-  await persistVideoToFirestore(video1);
-  saveData();
-  console.log(`[AI Scraper SUCCESS] Created restaurant "${newRestaurant.name}" with ${addedDishes.length} real dishes, ${galleryPhotos.length} photos, geocoded (${newRestaurant.latitude}, ${newRestaurant.longitude}) and video attached.`);
-  return {
-    restaurant: newRestaurant,
-    dishes: addedDishes,
-    videos: createdVideos,
-    isUpdated: false,
-    countDishes: addedDishes.length,
-    countVideos: createdVideos.length,
-    message: `Le restaurant "${newRestaurant.name}" a \xE9t\xE9 extrait avec succ\xE8s (${addedDishes.length} plats r\xE9els, ${galleryPhotos.length} photos r\xE9elles, g\xE9olocalisation: ${finalDisposition || "Actualis\xE9e"}).`
-  };
-}
-app.post("/api/extract-website", async (req, res) => {
-  const { url, urls } = req.body;
-  const urlList = [];
-  if (Array.isArray(urls) && urls.length > 0) {
-    urlList.push(...urls);
-  } else if (typeof url === "string") {
-    const parts = url.split("\n").map((u) => u.trim()).filter(Boolean);
-    urlList.push(...parts);
-  }
-  if (urlList.length === 0) {
-    return res.status(400).json({ error: "L'URL du site web est requise." });
-  }
-  if (urlList.length > 1) {
-    try {
-      console.log(`[AI Scraper] Bulk extraction started for ${urlList.length} URLs.`);
-      const results = [];
-      for (const singleUrl2 of urlList) {
-        try {
-          const out = await extractSingleRestaurantCore(singleUrl2);
-          results.push({ url: singleUrl2, success: true, ...out });
-        } catch (err) {
-          console.error(`[AI Scraper] Error extracting ${singleUrl2}:`, err);
-          results.push({ url: singleUrl2, success: false, error: err.message });
+    if (!extractedData) {
+      const brand = scraped.cleanName || scraped.siteName || (scraped.title ? scraped.title.split(/[-|—•]/)[0].trim() : "Restaurant");
+      extractedData = {
+        name: brand,
+        shortName: brand.split(/[-|—]/)[0].trim(),
+        address: scraped.addressHint || null,
+        postalCode: scraped.postalCodeHint || null,
+        city: scraped.cityHint || null,
+        slogan: scraped.description ? scraped.description.slice(0, 95) + " \u2728" : void 0,
+        description: scraped.description || scraped.extractedBodyText.slice(0, 350) || void 0,
+        category: scraped.inferredCategory || "Gourmet",
+        categories: scraped.inferredCategories || [scraped.inferredCategory || "Gourmet"],
+        logoUrl: scraped.logoUrl || null,
+        bannerUrl: scraped.bannerUrl || null,
+        email: scraped.emailHint || null,
+        phone: scraped.phoneHint || null,
+        openingHours: scraped.openingHoursHint || null,
+        dishes: scraped.dishes
+        // STRICT: only real dishes, NO invented fallbacks!
+      };
+    }
+    let finalLatitude = void 0;
+    let finalLongitude = void 0;
+    let finalDisposition = void 0;
+    if (scraped.geo && scraped.geo.lat && scraped.geo.lng) {
+      finalLatitude = scraped.geo.lat;
+      finalLongitude = scraped.geo.lng;
+      finalDisposition = scraped.addressHint ? scraped.addressHint.split(",")[0].trim() : void 0;
+    } else if (extractedData.address) {
+      const geoResult = await geocodeAddressReal(extractedData.address, extractedData.city || void 0);
+      if (geoResult) {
+        finalLatitude = geoResult.lat;
+        finalLongitude = geoResult.lng;
+        finalDisposition = geoResult.district;
+      }
+    }
+    const galleryPhotos = scraped.photos.filter((p) => p !== (extractedData.logoUrl || scraped.logoUrl)).slice(0, 10);
+    let confidenceScore = 20;
+    if (extractedData.address) confidenceScore += 15;
+    if (finalLatitude && finalLongitude) confidenceScore += 20;
+    if (extractedData.phone) confidenceScore += 10;
+    if (extractedData.email) confidenceScore += 5;
+    if (Array.isArray(extractedData.dishes) && extractedData.dishes.length > 0) confidenceScore += 20;
+    if (extractedData.logoUrl) confidenceScore += 5;
+    if (galleryPhotos.length > 0) confidenceScore += 5;
+    const dataConfidence = Math.min(100, confidenceScore);
+    const existingMatch = findExistingRestaurant({
+      ...extractedData,
+      website: url,
+      websiteUrl: url
+    });
+    if (existingMatch) {
+      console.log(`[AI Scraper] Found existing matching restaurant "${existingMatch.name}" (${existingMatch.id}). Updating in place.`);
+      const mergedRestaurant = mergeRestaurantData(existingMatch, {
+        name: extractedData.name,
+        shortName: extractedData.shortName || extractedData.name,
+        address: extractedData.address || existingMatch.address,
+        postalCode: extractedData.postalCode || scraped.postalCodeHint || existingMatch.postalCode,
+        city: extractedData.city || scraped.cityHint || existingMatch.city,
+        logoUrl: extractedData.logoUrl || existingMatch.logoUrl,
+        bannerUrl: extractedData.bannerUrl || existingMatch.bannerUrl,
+        photos: galleryPhotos.length > 0 ? galleryPhotos : existingMatch.photos,
+        slogan: extractedData.slogan || existingMatch.slogan,
+        email: extractedData.email || existingMatch.email,
+        phone: extractedData.phone || existingMatch.phone,
+        openingHours: extractedData.openingHours || existingMatch.openingHours,
+        description: extractedData.description || existingMatch.description,
+        category: extractedData.category || existingMatch.category,
+        categories: extractedData.categories || existingMatch.categories,
+        dispositionShop: finalDisposition || existingMatch.dispositionShop,
+        latitude: finalLatitude ?? existingMatch.latitude,
+        longitude: finalLongitude ?? existingMatch.longitude,
+        website: url,
+        websiteUrl: url,
+        dataSources: Array.from(/* @__PURE__ */ new Set([...existingMatch.dataSources || [], ...scraped.dataSources])),
+        dataConfidence: Math.max(existingMatch.dataConfidence || 0, dataConfidence),
+        lastEnrichedAt: (/* @__PURE__ */ new Date()).toISOString()
+      });
+      const rIdx = restaurants.findIndex((r) => r.id === existingMatch.id);
+      if (rIdx !== -1) {
+        restaurants[rIdx] = mergedRestaurant;
+      }
+      console.log(`[FirestorePersist] Persisting merged restaurant "${mergedRestaurant.name}" to Firestore...`);
+      await persistRestaurantToFirestore(mergedRestaurant);
+      const currentRestDishes = dishes.filter((d) => d.restaurantId === existingMatch.id);
+      const addedDishes2 = [];
+      for (const dishData of extractedData.dishes || []) {
+        const cleanName = cleanStringForMatching(dishData.name);
+        const dishExists = currentRestDishes.find((d) => cleanStringForMatching(d.name) === cleanName);
+        if (!dishExists) {
+          const newDish = {
+            id: `dish-${Math.random().toString(36).substring(2, 9)}`,
+            restaurantId: existingMatch.id,
+            name: dishData.name,
+            description: dishData.description || "",
+            price: dishData.price !== void 0 && dishData.price !== null && !isNaN(Number(dishData.price)) && Number(dishData.price) > 0 ? Number(dishData.price) : null,
+            isAvailable: true,
+            imageUrl: dishData.imageUrl || void 0,
+            createdAt: (/* @__PURE__ */ new Date()).toISOString(),
+            category: dishData.category || "Plat"
+          };
+          dishes.unshift(newDish);
+          addedDishes2.push(newDish);
+          await persistDishToFirestore(newDish);
         }
       }
-      const successful = results.filter((r) => r.success);
-      return res.status(200).json({
-        success: true,
-        isBulk: true,
-        count: successful.length,
-        totalRequested: urlList.length,
-        results,
-        restaurants: successful.map((s) => s.restaurant),
-        message: `${successful.length} restaurant(s) extrait(s) et synchronis\xE9(s) avec succ\xE8s.`
-      });
-    } catch (bulkErr) {
-      return res.status(500).json({ error: "Erreur lors de l'extraction en masse : " + bulkErr.message });
+      saveData();
+      const allDishes = dishes.filter((d) => d.restaurantId === existingMatch.id);
+      const allVideos = videos.filter((v) => v.restaurantId === existingMatch.id);
+      console.log(`[RestaurantImport] SUCCESS: Enriched restaurant "${mergedRestaurant.name}" (${addedDishes2.length} new dishes, confidence: ${mergedRestaurant.dataConfidence}%)`);
+      return {
+        restaurant: mergedRestaurant,
+        dishes: allDishes,
+        videos: allVideos,
+        isUpdated: true,
+        countDishes: allDishes.length,
+        countVideos: allVideos.length,
+        message: `Le restaurant "${mergedRestaurant.name}" a \xE9t\xE9 enrichi avec succ\xE8s (${addedDishes2.length} nouveaux plats r\xE9els ajout\xE9s, photos: ${galleryPhotos.length}, g\xE9olocalisation: ${finalDisposition || "Actualis\xE9e"}).`
+      };
     }
-  }
-  const singleUrl = urlList[0];
-  try {
-    console.log(`[AI Scraper] Deep extraction starting for: ${singleUrl}`);
-    const result = await extractSingleRestaurantCore(singleUrl);
-    return res.status(result.isUpdated ? 200 : 201).json({
-      success: true,
-      ...result
+    const newRestId = `rest-${Math.random().toString(36).substring(2, 9)}`;
+    const newRestaurant = {
+      id: newRestId,
+      userId: "usr-admin-1",
+      name: extractedData.name,
+      shortName: extractedData.shortName || extractedData.name,
+      address: extractedData.address || "",
+      postalCode: extractedData.postalCode || scraped.postalCodeHint || void 0,
+      city: extractedData.city || scraped.cityHint || void 0,
+      commissionRateDelivery: 15,
+      commissionRateCollect: 5,
+      stripeAccountId: `acct_${Math.random().toString(36).substring(2, 9).toUpperCase()}`,
+      logoUrl: extractedData.logoUrl || scraped.logoUrl || void 0,
+      bannerUrl: extractedData.bannerUrl || scraped.bannerUrl || void 0,
+      photos: galleryPhotos.length > 0 ? galleryPhotos : void 0,
+      slogan: extractedData.slogan || void 0,
+      isCertified: true,
+      subscriptionTier: extractedData.subscriptionTier || "pro",
+      promoMessage: "Bienvenue chez " + extractedData.name + " ! D\xE9couvrez notre carte authentique.",
+      countdownMinutes: Math.floor(Math.random() * 10) + 5,
+      countdownText: "Pr\xE9paration minute de votre commande",
+      likesReceived: Math.floor(Math.random() * 150) + 20,
+      pointsReceived: Math.floor(Math.random() * 100) + 15,
+      createdAt: (/* @__PURE__ */ new Date()).toISOString(),
+      email: extractedData.email || void 0,
+      phone: extractedData.phone || void 0,
+      openingHours: extractedData.openingHours || scraped.openingHoursHint || void 0,
+      description: extractedData.description || extractedData.slogan || void 0,
+      category: extractedData.category || "Fran\xE7ais",
+      categories: extractedData.categories || [extractedData.category || "Fran\xE7ais"],
+      isFavorite: true,
+      dispositionShop: finalDisposition || void 0,
+      latitude: finalLatitude ?? void 0,
+      longitude: finalLongitude ?? void 0,
+      website: url,
+      websiteUrl: url,
+      isOrderingEnabled: true,
+      isPublished: true,
+      dataSources: scraped.dataSources,
+      dataConfidence,
+      lastEnrichedAt: (/* @__PURE__ */ new Date()).toISOString(),
+      rating: 4.9,
+      reviewCount: 95
+    };
+    restaurants.unshift(newRestaurant);
+    console.log(`[FirestorePersist] Persisting new restaurant "${newRestaurant.name}" to Firestore...`);
+    await persistRestaurantToFirestore(newRestaurant);
+    const addedDishes = [];
+    for (const dishData of extractedData.dishes || []) {
+      const newDish = {
+        id: `dish-${Math.random().toString(36).substring(2, 9)}`,
+        restaurantId: newRestId,
+        name: dishData.name,
+        description: dishData.description || "",
+        price: dishData.price !== void 0 && dishData.price !== null && !isNaN(Number(dishData.price)) && Number(dishData.price) > 0 ? Number(dishData.price) : null,
+        isAvailable: true,
+        imageUrl: dishData.imageUrl || void 0,
+        createdAt: (/* @__PURE__ */ new Date()).toISOString(),
+        category: dishData.category || "Plat"
+      };
+      dishes.unshift(newDish);
+      addedDishes.push(newDish);
+      await persistDishToFirestore(newDish);
+    }
+    const catLower = (newRestaurant.category + " " + (newRestaurant.slogan || "") + " " + url).toLowerCase();
+    let matchedVideos = AVAILABLE_FOOD_VIDEOS.filter((v) => {
+      if (catLower.includes("pizz") || catLower.includes("ital")) return v.category === "pizza";
+      if (catLower.includes("burg") || catLower.includes("smash") || catLower.includes("street")) return v.category === "burger_meat";
+      if (catLower.includes("sush") || catLower.includes("ramen") || catLower.includes("asia") || catLower.includes("japon")) return v.category === "sushi_japanese" || v.category === "soup_ramen";
+      if (catLower.includes("caf") || catLower.includes("p\xE2tiss") || catLower.includes("dessert") || catLower.includes("sucr")) return v.category === "dessert_sweet";
+      if (catLower.includes("cocktail") || catLower.includes("bar") || catLower.includes("vin")) return v.category === "wine_drinks" || v.category === "cocktails_bar";
+      return v.category === "french_gourmet" || v.category === "cooking_chef";
     });
+    if (matchedVideos.length === 0) {
+      matchedVideos = [AVAILABLE_FOOD_VIDEOS[11], AVAILABLE_FOOD_VIDEOS[12], AVAILABLE_FOOD_VIDEOS[0]];
+    }
+    const createdVideos = [];
+    const mainVid = matchedVideos[0] || AVAILABLE_FOOD_VIDEOS[11];
+    const video1 = {
+      id: `vid-${Math.random().toString(36).substring(2, 9)}`,
+      restaurantId: newRestId,
+      videoUrl: mainVid.url,
+      associatedDishId: addedDishes[0]?.id || void 0,
+      title: `\u{1F525} NOUVEAU SUR FIDFUD : D\xE9couvrez ${newRestaurant.name} ! ${newRestaurant.slogan || ""}`,
+      likesCount: Math.floor(Math.random() * 250) + 50,
+      createdAt: (/* @__PURE__ */ new Date()).toISOString()
+    };
+    videos.unshift(video1);
+    createdVideos.push(video1);
+    await persistVideoToFirestore(video1);
+    saveData();
+    console.log(`[RestaurantImport] SUCCESS: Created restaurant "${newRestaurant.name}" with ${addedDishes.length} real dishes, ${galleryPhotos.length} photos, geocoded (${newRestaurant.latitude}, ${newRestaurant.longitude}) and video attached.`);
+    return {
+      restaurant: newRestaurant,
+      dishes: addedDishes,
+      videos: createdVideos,
+      isUpdated: false,
+      countDishes: addedDishes.length,
+      countVideos: createdVideos.length,
+      message: `Le restaurant "${newRestaurant.name}" a \xE9t\xE9 extrait avec succ\xE8s (${addedDishes.length} plats r\xE9els, ${galleryPhotos.length} photos r\xE9elles, g\xE9olocalisation: ${finalDisposition || "Actualis\xE9e"}).`
+    };
   } catch (err) {
-    console.error("[AI Scraper ERROR]", err);
-    res.status(500).json({ error: "Erreur lors de l'extraction par l'IA : " + err.message });
+    console.error(`[RestaurantImport] FAILED for ${rawUrl}:`, err?.message || err);
+    throw err;
+  }
+}
+app.post("/api/extract-website", async (req, res) => {
+  res.setHeader("Content-Type", "application/json");
+  try {
+    const { url, urls } = req.body || {};
+    const urlList = [];
+    if (Array.isArray(urls) && urls.length > 0) {
+      urlList.push(...urls);
+    } else if (typeof url === "string") {
+      const parts = url.split("\n").map((u) => u.trim()).filter(Boolean);
+      urlList.push(...parts);
+    }
+    if (urlList.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: "INVALID_URL",
+          message: "L'URL du site web est requise.",
+          step: "validation"
+        }
+      });
+    }
+    if (urlList.length > 1) {
+      try {
+        console.log(`[AI Scraper] Bulk extraction started for ${urlList.length} URLs.`);
+        const results = [];
+        for (const singleUrl2 of urlList) {
+          try {
+            const out = await extractSingleRestaurantCore(singleUrl2);
+            results.push({ url: singleUrl2, success: true, ...out });
+          } catch (err) {
+            console.error(`[AI Scraper] Error extracting ${singleUrl2}:`, err);
+            results.push({ url: singleUrl2, success: false, error: err?.message || "\xC9chec de l'extraction" });
+          }
+        }
+        const successful = results.filter((r) => r.success);
+        return res.status(200).json({
+          success: true,
+          isBulk: true,
+          count: successful.length,
+          totalRequested: urlList.length,
+          results,
+          restaurants: successful.map((s) => s.restaurant),
+          message: `${successful.length} restaurant(s) extrait(s) et synchronis\xE9(s) avec succ\xE8s.`
+        });
+      } catch (bulkErr) {
+        return res.status(500).json({
+          success: false,
+          error: {
+            code: "RESTAURANT_IMPORT_FAILED",
+            message: "Erreur lors de l'extraction en masse : " + (bulkErr?.message || "Erreur interne"),
+            step: "bulk_workflow"
+          }
+        });
+      }
+    }
+    const singleUrl = urlList[0];
+    try {
+      console.log(`[AI Scraper] Deep extraction starting for: ${singleUrl}`);
+      const result = await extractSingleRestaurantCore(singleUrl);
+      return res.status(result.isUpdated ? 200 : 201).json({
+        success: true,
+        ...result
+      });
+    } catch (err) {
+      console.error("[AI Scraper ERROR]", err);
+      return res.status(500).json({
+        success: false,
+        error: {
+          code: "RESTAURANT_IMPORT_FAILED",
+          message: "Erreur lors de l'extraction par l'IA : " + (err?.message || "Erreur serveur interne"),
+          step: "extractSingleRestaurantCore"
+        }
+      });
+    }
+  } catch (fatalErr) {
+    console.error("[AI Scraper FATAL ERROR]", fatalErr);
+    return res.status(500).json({
+      success: false,
+      error: {
+        code: "RESTAURANT_IMPORT_FAILED",
+        message: "Erreur critique du serveur d'extraction : " + (fatalErr?.message || "Erreur inattendue"),
+        step: "request_guard"
+      }
+    });
   }
 });
 app.post("/api/extract-websites-bulk", async (req, res) => {
-  const { urls, urlsText } = req.body;
-  const urlList = [];
-  if (Array.isArray(urls)) {
-    urlList.push(...urls.map((u) => String(u).trim()).filter(Boolean));
-  }
-  if (typeof urlsText === "string") {
-    const fromText = urlsText.split("\n").map((u) => u.trim()).filter(Boolean);
-    urlList.push(...fromText);
-  }
-  const cleanList = Array.from(new Set(urlList));
-  if (cleanList.length === 0) {
-    return res.status(400).json({ error: "Veuillez fournir au moins une URL de site web." });
-  }
+  res.setHeader("Content-Type", "application/json");
   try {
+    const { urls, urlsText } = req.body || {};
+    const urlList = [];
+    if (Array.isArray(urls)) {
+      urlList.push(...urls.map((u) => String(u).trim()).filter(Boolean));
+    }
+    if (typeof urlsText === "string") {
+      const fromText = urlsText.split("\n").map((u) => u.trim()).filter(Boolean);
+      urlList.push(...fromText);
+    }
+    const cleanList = Array.from(new Set(urlList));
+    if (cleanList.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: "INVALID_URL",
+          message: "Veuillez fournir au moins une URL de site web.",
+          step: "validation"
+        }
+      });
+    }
     console.log(`[AI Scraper Bulk API] Processing batch of ${cleanList.length} restaurants...`);
     const results = [];
     let totalDishesCreated = 0;
@@ -7938,7 +8013,7 @@ app.post("/api/extract-websites-bulk", async (req, res) => {
       }
     }
     const successList = results.filter((r) => r.success);
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
       count: successList.length,
       totalRequested: cleanList.length,
@@ -7950,7 +8025,14 @@ app.post("/api/extract-websites-bulk", async (req, res) => {
     });
   } catch (err) {
     console.error("[AI Scraper Bulk Error]", err);
-    res.status(500).json({ error: "Erreur lors du traitement en masse : " + err.message });
+    return res.status(500).json({
+      success: false,
+      error: {
+        code: "RESTAURANT_IMPORT_FAILED",
+        message: "Erreur lors du traitement en masse : " + (err?.message || "Erreur interne"),
+        step: "extractWebsitesBulk"
+      }
+    });
   }
 });
 app.post("/api/extract-instagram", async (req, res) => {
@@ -9216,10 +9298,7 @@ async function startStandaloneServer() {
     });
   }
 }
-var isDirectExecution = Boolean(
-  process.argv[1] && (process.argv[1].endsWith("server.ts") || process.argv[1].endsWith("server.js") || process.argv[1].endsWith("server.cjs"))
-);
-if (isDirectExecution && !process.env.VERCEL) {
+if (!process.env.VERCEL) {
   startStandaloneServer().catch((err) => {
     console.error("Failed to start standalone server:", err);
   });
