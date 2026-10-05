@@ -15,12 +15,24 @@ try {
 } catch (e) {
   console.warn("Failed to set server Firestore log level:", e);
 }
-var uploadsDir = path.join(process.cwd(), "uploads");
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
+var isVercelRuntime = Boolean(process.env.VERCEL);
+var uploadsDir = isVercelRuntime ? path.join("/tmp", "fidfud-uploads") : path.join(process.cwd(), "uploads");
+try {
+  if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+  }
+} catch (err) {
+  console.error("[BOOT][STORAGE]", err);
 }
 var storage = multer.diskStorage({
   destination: (req, file, cb) => {
+    try {
+      if (!fs.existsSync(uploadsDir)) {
+        fs.mkdirSync(uploadsDir, { recursive: true });
+      }
+    } catch (err) {
+      console.error("[BOOT][STORAGE][DEST]", err);
+    }
     cb(null, uploadsDir);
   },
   filename: (req, file, cb) => {
@@ -44,6 +56,12 @@ function convertDataUriToUploadFile(dataUri) {
     const ext = matches[1] === "jpeg" ? "jpg" : matches[1];
     const base64Data = matches[2];
     const buffer = Buffer.from(base64Data, "base64");
+    try {
+      if (!fs.existsSync(uploadsDir)) {
+        fs.mkdirSync(uploadsDir, { recursive: true });
+      }
+    } catch {
+    }
     const filename = `saved_logo_${Date.now()}_${Math.random().toString(36).substring(2, 6)}.${ext}`;
     const filePath = path.join(uploadsDir, filename);
     fs.writeFileSync(filePath, buffer);
@@ -1423,6 +1441,9 @@ async function syncFromFirestore() {
 var genId = (prefix) => `${prefix}-${Math.random().toString(36).substring(2, 9)}`;
 var DATA_FILE = path.join(process.cwd(), "data_store.json");
 function saveData() {
+  if (process.env.VERCEL) {
+    return;
+  }
   try {
     computeRatingsForEntities();
     const data = {
@@ -2383,7 +2404,7 @@ app.use((req, res, next) => {
 var failedToRestoreUploads = /* @__PURE__ */ new Set();
 app.get("/uploads/:filename", async (req, res, next) => {
   const filename = req.params.filename;
-  const localPath = path.join(process.cwd(), "uploads", filename);
+  const localPath = path.join(uploadsDir, filename);
   if (fs.existsSync(localPath)) {
     return res.sendFile(localPath);
   }
@@ -2411,12 +2432,16 @@ app.get("/uploads/:filename", async (req, res, next) => {
         }
         if (!chunkMissing) {
           const fullFileBuffer = Buffer.concat(chunkBuffers);
-          if (!fs.existsSync(uploadsDir)) {
-            fs.mkdirSync(uploadsDir, { recursive: true });
+          try {
+            if (!fs.existsSync(uploadsDir)) {
+              fs.mkdirSync(uploadsDir, { recursive: true });
+            }
+            fs.writeFileSync(localPath, fullFileBuffer);
+            console.log(`[Firebase Server] Restored local file ${filename} (${fullFileBuffer.length} bytes) successfully.`);
+            return res.sendFile(localPath);
+          } catch (writeErr) {
+            console.warn(`[Firebase Server] Could not write restored file to disk:`, writeErr);
           }
-          fs.writeFileSync(localPath, fullFileBuffer);
-          console.log(`[Firebase Server] Restored local file ${filename} (${fullFileBuffer.length} bytes) successfully.`);
-          return res.sendFile(localPath);
         }
       } else {
         failedToRestoreUploads.add(filename);
@@ -2452,7 +2477,7 @@ app.get("/uploads/:filename", async (req, res, next) => {
   }
   res.status(404).send("File not found");
 });
-app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
+app.use("/uploads", express.static(uploadsDir));
 app.post("/api/upload", upload.single("file"), async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: "Aucun fichier fourni ou format incorrect." });
@@ -2887,7 +2912,50 @@ app.post("/api/admin/users/:userId/password", (req, res) => {
   res.json({ success: true, message: `Mot de passe de ${user.email} r\xE9initialis\xE9 avec succ\xE8s !` });
 });
 app.get("/api/health", (req, res) => {
-  res.json({ status: "healthy", time: (/* @__PURE__ */ new Date()).toISOString() });
+  res.setHeader("Content-Type", "application/json");
+  return res.status(200).json({
+    success: true,
+    runtime: isVercelRuntime ? "vercel" : "standalone",
+    server: "ok"
+  });
+});
+app.get("/api/admin/diagnostics", async (req, res) => {
+  res.setHeader("Content-Type", "application/json");
+  try {
+    const geminiDiag = await diagnoseGemini();
+    let tempStorageWritable = false;
+    try {
+      if (!fs.existsSync(uploadsDir)) {
+        fs.mkdirSync(uploadsDir, { recursive: true });
+      }
+      const testFile = path.join(uploadsDir, `.diag_test_${Date.now()}.tmp`);
+      fs.writeFileSync(testFile, "ok");
+      fs.unlinkSync(testFile);
+      tempStorageWritable = true;
+    } catch (err) {
+      console.warn("[DIAGNOSTICS] Temp storage write test failed:", err);
+      tempStorageWritable = false;
+    }
+    const firebaseAdminConfigured = Boolean(getFirebaseAdminAuth());
+    const firestoreConfigured = Boolean(db && !isFirestoreUnreachable);
+    const geminiApiKeyPresent = Boolean(process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim());
+    return res.status(200).json({
+      server: true,
+      firebaseAdminConfigured,
+      firestoreConfigured,
+      geminiApiKeyPresent,
+      geminiOperational: geminiDiag.operational,
+      geminiStatus: geminiDiag.status,
+      geminiMessage: geminiDiag.message || (geminiDiag.operational ? "Op\xE9rationnel" : "Erreur"),
+      runtime: isVercelRuntime ? "vercel" : "standalone",
+      tempStorageWritable
+    });
+  } catch (diagErr) {
+    return res.status(500).json({
+      server: true,
+      error: diagErr?.message || "Erreur lors du diagnostic admin"
+    });
+  }
 });
 app.get("/api/feed", (req, res) => {
   const validRestaurants = restaurants.filter((r) => !deletedRestaurantIds.includes(r.id));
@@ -6830,56 +6898,59 @@ app.post("/api/stripe/webhook", express.raw({ type: "application/json" }), async
     res.status(400).send(`Webhook Error: ${err.message}`);
   }
 });
-var aiClient = null;
-var isGeminiAuthOperational = false;
-var isProbingGemini = false;
-var lastGeminiAuthFailure = 0;
-var GEMINI_COOLDOWN_MS = 5 * 60 * 1e3;
-async function probeGeminiAuth() {
+function categorizeGeminiError(err) {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey || !apiKey.trim()) {
-    isGeminiAuthOperational = false;
-    return false;
+    return { code: "MISSING_KEY", message: "Cl\xE9 GEMINI_API_KEY absente du runtime." };
   }
-  if (isProbingGemini) return false;
-  isProbingGemini = true;
+  const msg = (err?.message || String(err)).toLowerCase();
+  const status = err?.status || err?.statusCode;
+  if (status === 401 || msg.includes("api_key_invalid") || msg.includes("invalid api key") || msg.includes("unauthenticated") || msg.includes("credentials") || msg.includes("access_token_type_unsupported")) {
+    return { code: "INVALID_KEY", message: "Cl\xE9 API Gemini invalide ou non autoris\xE9e (401)." };
+  }
+  if (status === 429 || msg.includes("quota") || msg.includes("resource_exhausted")) {
+    if (msg.includes("quota")) {
+      return { code: "QUOTA_EXCEEDED", message: "Quota Gemini d\xE9pass\xE9 (429 RESOURCE_EXHAUSTED)." };
+    }
+    return { code: "RATE_LIMITED", message: "Limite de d\xE9bit Gemini atteinte (Rate limited 429)." };
+  }
+  if (status === 404 || msg.includes("not_found") || msg.includes("model not found")) {
+    return { code: "MODEL_NOT_FOUND", message: "Mod\xE8le Gemini introuvable ou non support\xE9 (404)." };
+  }
+  if (status === 503 || status === 500 || msg.includes("unavailable") || msg.includes("overloaded")) {
+    return { code: "SERVICE_UNAVAILABLE", message: "Service Gemini temporairement indisponible (503)." };
+  }
+  return { code: "GENERATION_ERROR", message: err?.message || "Erreur lors de la g\xE9n\xE9ration avec Gemini." };
+}
+async function diagnoseGemini() {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey || !apiKey.trim()) {
+    return { operational: false, status: "MISSING_KEY", message: "Variable GEMINI_API_KEY absente." };
+  }
   try {
-    const testClient = new GoogleGenAI({
+    const client = new GoogleGenAI({
       apiKey: apiKey.trim(),
       httpOptions: { headers: { "User-Agent": "aistudio-build" } }
     });
-    await testClient.models.generateContent({
+    const res = await client.models.generateContent({
       model: "gemini-3.8-flash",
       contents: "ping"
     });
-    isGeminiAuthOperational = true;
-    console.log("[Gemini] API authenticated successfully.");
-    return true;
+    if (res && res.text) {
+      return { operational: true, status: "OK", message: "API Gemini op\xE9rationnelle." };
+    }
+    return { operational: true, status: "OK", message: "API Gemini op\xE9rationnelle." };
   } catch (e) {
-    isGeminiAuthOperational = false;
-    lastGeminiAuthFailure = Date.now();
-    console.log("[Gemini] Built-in reliable processing active (API credentials unauthenticated or awaiting activation).");
-    return false;
-  } finally {
-    isProbingGemini = false;
+    const cat = categorizeGeminiError(e);
+    return { operational: false, status: cat.code, message: cat.message };
   }
 }
-if (process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim()) {
-  setTimeout(() => {
-    probeGeminiAuth().catch(() => {
-    });
-  }, 100);
-}
+var aiClient = null;
+var isGeminiAuthOperational = false;
+var lastGeminiAuthFailure = 0;
 function getGeminiClient() {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey || !apiKey.trim()) {
-    return null;
-  }
-  if (!isGeminiAuthOperational) {
-    if (!isProbingGemini && Date.now() - lastGeminiAuthFailure > GEMINI_COOLDOWN_MS) {
-      probeGeminiAuth().catch(() => {
-      });
-    }
     return null;
   }
   if (!aiClient) {
@@ -6900,29 +6971,25 @@ function getGeminiClient() {
   return aiClient;
 }
 async function safeGenerateContent(params) {
-  const client = getGeminiClient();
-  if (!client) {
-    return { success: false, error: "GEMINI_CLIENT_UNAVAILABLE" };
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey || !apiKey.trim()) {
+    return { success: false, error: "Cl\xE9 GEMINI_API_KEY absente", errorCode: "MISSING_KEY" };
   }
   try {
+    const client = getGeminiClient() || new GoogleGenAI({
+      apiKey: apiKey.trim(),
+      httpOptions: { headers: { "User-Agent": "aistudio-build" } }
+    });
     const response = await client.models.generateContent({
       model: params.model || "gemini-3.8-flash",
       contents: params.contents,
       config: params.config
     });
-    isGeminiAuthOperational = true;
     return { success: true, text: response.text || "" };
   } catch (err) {
-    const errMsg = err?.message || String(err);
-    const isAuthError = err?.status === 401 || errMsg.includes("UNAUTHENTICATED") || errMsg.includes("ACCESS_TOKEN_TYPE_UNSUPPORTED") || errMsg.includes("API_KEY_INVALID") || errMsg.includes("API_KEY_SERVICE_BLOCKED") || errMsg.includes("invalid authentication credentials");
-    if (isAuthError) {
-      isGeminiAuthOperational = false;
-      lastGeminiAuthFailure = Date.now();
-      console.log("[Gemini] API credentials awaiting validation or unauthenticated (401). Seamlessly using faithful built-in logic.");
-    } else {
-      console.log("[Gemini] Service notice: generation using built-in fallback.");
-    }
-    return { success: false, error: isAuthError ? "UNAUTHENTICATED" : "GENERATION_ERROR" };
+    const cat = categorizeGeminiError(err);
+    console.log(`[Gemini] API notice (${cat.code}):`, cat.message);
+    return { success: false, error: cat.message, errorCode: cat.code };
   }
 }
 var AVAILABLE_FOOD_VIDEOS = [
@@ -8171,22 +8238,17 @@ app.post("/api/youtube/verify", async (req, res) => {
     });
   }
 });
-app.post("/api/ai/generate-description", (req, res) => {
-  const { entityType, name, keywords, genre, cuisine, currentDescription } = req.body;
-  const client = getGeminiClient();
-  if (!client) {
-    const fallbacks = {
-      restaurant: `D\xE9couvrez une exp\xE9rience gastronomique d'exception au c\u0153ur de ${name || "notre \xE9tablissement"}. Une cuisine raffin\xE9e, \xE9labor\xE9e avec des produits locaux de saison et une touche d'originalit\xE9 signature.`,
-      dj: `Sets vinyles & \xE9lectro chaleureux s\xE9lectionn\xE9s par ${name || "notre DJ r\xE9sident"}. Une ambiance sonore immersive et \xE9l\xE9gante pour accompagner vos repas et ap\xE9ritifs festifs.`,
-      youtuber: `Suivez les aventures et d\xE9gustations culinaires exclusives de ${name || "notre cr\xE9ateur food"}. Analyse authentique, p\xE9pites culinaires et immersion totale dans l'univers de la gastronomie.`,
-      culinary_show: `Une \xE9mission culinaire captivante pr\xE9sent\xE9e par ${name || "nos Chefs h\xF4tes"}. Recettes secr\xE8tes, crash-tests en cuisine et masterclasses gourmandes en direct.`,
-      popup: `Plongez dans l'exp\xE9rience immersive ! ${name || "D\xE9couvrez nos contenus exclusifs"} : DJs live, \xE9missions culinaires et YouTubers food pour une ambiance in\xE9gal\xE9e.`,
-      dish: `Une sp\xE9cialit\xE9 gourmande signature pr\xE9par\xE9e minute par notre Chef \xE0 partir d'ingr\xE9dients nobles et frais.`,
-      formula: `Formule gourmande compl\xE8te combinant nos meilleures sp\xE9cialit\xE9s du jour \xE0 un tarif avantageux.`
-    };
-    return res.json({
-      success: true,
-      description: fallbacks[entityType] || `D\xE9couvrez ${name || "notre S\xE9lection Sp\xE9ciale"}, une exp\xE9rience gourmande unique combinant passion, qualit\xE9 et authenticit\xE9.`
+app.post("/api/ai/generate-description", async (req, res) => {
+  res.setHeader("Content-Type", "application/json");
+  const { entityType, name, keywords, genre, cuisine, currentDescription } = req.body || {};
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey || !apiKey.trim()) {
+    return res.status(503).json({
+      success: false,
+      error: {
+        code: "MISSING_KEY",
+        message: "La cl\xE9 API Gemini (GEMINI_API_KEY) n'est pas configur\xE9e dans l'environnement."
+      }
     });
   }
   const prompt = `You are an elite creative director and gourmet French copywriter.
@@ -8194,21 +8256,28 @@ Write a highly engaging, appetizing, professional, and persuasive description in
 Context / Details: ${keywords || genre || cuisine || ""}.
 Make it sound authentic, enticing, and high-end for visitors on the platform.
 Include 1 fitting emoji if relevant. Output ONLY the description text without any quotes or explanations.`;
-  client.models.generateContent({
-    model: "gemini-3.8-flash",
-    contents: prompt
-  }).then((response) => {
-    const description = response.text?.trim() || "";
-    res.json({ success: true, description });
-  }).catch((err) => {
-    isGeminiAuthOperational = false;
-    lastGeminiAuthFailure = Date.now();
-    console.log("[AI General Description Notice]", err?.message || "fallback");
-    res.json({
-      success: true,
-      description: `Bienvenue dans l'univers de ${name || "notre S\xE9lection"}. Une exp\xE9rience immersive et chaleureuse r\xE9unissant qualit\xE9, passion et moments inoubliables.`
+  try {
+    const client = new GoogleGenAI({
+      apiKey: apiKey.trim(),
+      httpOptions: { headers: { "User-Agent": "aistudio-build" } }
     });
-  });
+    const response = await client.models.generateContent({
+      model: "gemini-3.8-flash",
+      contents: prompt
+    });
+    const description = response.text?.trim() || "";
+    return res.status(200).json({ success: true, description });
+  } catch (err) {
+    const diag = categorizeGeminiError(err);
+    console.error("[AI General Description Error]", diag.code, err?.message);
+    return res.status(500).json({
+      success: false,
+      error: {
+        code: diag.code,
+        message: diag.message
+      }
+    });
+  }
 });
 app.post("/api/ai/generate-restaurant-copy", async (req, res) => {
   const { name, categories, address } = req.body;

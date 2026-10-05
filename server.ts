@@ -17,14 +17,30 @@ try {
   console.warn('Failed to set server Firestore log level:', e);
 }
 
-// Configure multer file upload
-const uploadsDir = path.join(process.cwd(), 'uploads');
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
+// Configure multer file upload with Vercel Serverless safe storage
+const isVercelRuntime = Boolean(process.env.VERCEL);
+
+const uploadsDir = isVercelRuntime
+  ? path.join('/tmp', 'fidfud-uploads')
+  : path.join(process.cwd(), 'uploads');
+
+try {
+  if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+  }
+} catch (err) {
+  console.error('[BOOT][STORAGE]', err);
 }
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
+    try {
+      if (!fs.existsSync(uploadsDir)) {
+        fs.mkdirSync(uploadsDir, { recursive: true });
+      }
+    } catch (err) {
+      console.error('[BOOT][STORAGE][DEST]', err);
+    }
     cb(null, uploadsDir);
   },
   filename: (req, file, cb) => {
@@ -51,6 +67,12 @@ function convertDataUriToUploadFile(dataUri: string): string {
     const base64Data = matches[2];
     const buffer = Buffer.from(base64Data, 'base64');
     
+    try {
+      if (!fs.existsSync(uploadsDir)) {
+        fs.mkdirSync(uploadsDir, { recursive: true });
+      }
+    } catch {}
+
     const filename = `saved_logo_${Date.now()}_${Math.random().toString(36).substring(2, 6)}.${ext}`;
     const filePath = path.join(uploadsDir, filename);
     fs.writeFileSync(filePath, buffer);
@@ -1781,6 +1803,10 @@ const genId = (prefix: string) => `${prefix}-${Math.random().toString(36).substr
 const DATA_FILE = path.join(process.cwd(), 'data_store.json');
 
 export function saveData() {
+  if (process.env.VERCEL) {
+    // Vercel Serverless filesystem is read-only; Firestore is the authoritative persistence layer
+    return;
+  }
   try {
     computeRatingsForEntities();
     const data = {
@@ -2817,7 +2843,7 @@ loadData();
   // API ROUTES
   app.get('/uploads/:filename', async (req, res, next) => {
     const filename = req.params.filename;
-    const localPath = path.join(process.cwd(), 'uploads', filename);
+    const localPath = path.join(uploadsDir, filename);
     
     // 1. If local file exists, serve it immediately
     if (fs.existsSync(localPath)) {
@@ -2852,12 +2878,16 @@ loadData();
           
           if (!chunkMissing) {
             const fullFileBuffer = Buffer.concat(chunkBuffers);
-            if (!fs.existsSync(uploadsDir)) {
-              fs.mkdirSync(uploadsDir, { recursive: true });
+            try {
+              if (!fs.existsSync(uploadsDir)) {
+                fs.mkdirSync(uploadsDir, { recursive: true });
+              }
+              fs.writeFileSync(localPath, fullFileBuffer);
+              console.log(`[Firebase Server] Restored local file ${filename} (${fullFileBuffer.length} bytes) successfully.`);
+              return res.sendFile(localPath);
+            } catch (writeErr) {
+              console.warn(`[Firebase Server] Could not write restored file to disk:`, writeErr);
             }
-            fs.writeFileSync(localPath, fullFileBuffer);
-            console.log(`[Firebase Server] Restored local file ${filename} (${fullFileBuffer.length} bytes) successfully.`);
-            return res.sendFile(localPath);
           }
         } else {
           failedToRestoreUploads.add(filename);
@@ -2897,7 +2927,7 @@ loadData();
     res.status(404).send('File not found');
   });
 
-  app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
+  app.use('/uploads', express.static(uploadsDir));
 
   app.post('/api/upload', upload.single('file'), async (req, res) => {
     if (!req.file) {
@@ -3404,8 +3434,54 @@ loadData();
   });
 
   app.get('/api/health', (req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    return res.status(200).json({
+      success: true,
+      runtime: isVercelRuntime ? 'vercel' : 'standalone',
+      server: 'ok'
+    });
+  });
 
-    res.json({ status: 'healthy', time: new Date().toISOString() });
+  app.get('/api/admin/diagnostics', async (req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    try {
+      const geminiDiag = await diagnoseGemini();
+
+      let tempStorageWritable = false;
+      try {
+        if (!fs.existsSync(uploadsDir)) {
+          fs.mkdirSync(uploadsDir, { recursive: true });
+        }
+        const testFile = path.join(uploadsDir, `.diag_test_${Date.now()}.tmp`);
+        fs.writeFileSync(testFile, 'ok');
+        fs.unlinkSync(testFile);
+        tempStorageWritable = true;
+      } catch (err) {
+        console.warn('[DIAGNOSTICS] Temp storage write test failed:', err);
+        tempStorageWritable = false;
+      }
+
+      const firebaseAdminConfigured = Boolean(getFirebaseAdminAuth());
+      const firestoreConfigured = Boolean(db && !isFirestoreUnreachable);
+      const geminiApiKeyPresent = Boolean(process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim());
+
+      return res.status(200).json({
+        server: true,
+        firebaseAdminConfigured,
+        firestoreConfigured,
+        geminiApiKeyPresent,
+        geminiOperational: geminiDiag.operational,
+        geminiStatus: geminiDiag.status,
+        geminiMessage: geminiDiag.message || (geminiDiag.operational ? 'Opérationnel' : 'Erreur'),
+        runtime: isVercelRuntime ? 'vercel' : 'standalone',
+        tempStorageWritable
+      });
+    } catch (diagErr: any) {
+      return res.status(500).json({
+        server: true,
+        error: diagErr?.message || 'Erreur lors du diagnostic admin'
+      });
+    }
   });
 
   // 1. Get Video Feed (Hydrated with restaurant information and dish details, strictly deduplicated by restaurant)
@@ -8115,61 +8191,70 @@ Réponds UNIQUEMENT avec le texte final prêt à être publié, sans guillemets 
 
   // --- ENDPOINTS FOR AUTOMATED WEBSITES & INSTAGRAM EXTRACTION ---
   
-  // Resilient Gemini client with circuit-breaker for invalid/unauthenticated credentials
-  let aiClient: GoogleGenAI | null = null;
-  let isGeminiAuthOperational = false;
-  let isProbingGemini = false;
-  let lastGeminiAuthFailure = 0;
-  const GEMINI_COOLDOWN_MS = 5 * 60 * 1000; // 5 minute cooldown on 401/unauthenticated
+  // Resilient Gemini client with precise error differentiation (MISSING_KEY, INVALID_KEY, QUOTA_EXCEEDED, RATE_LIMITED, MODEL_NOT_FOUND, SERVICE_UNAVAILABLE)
+  type GeminiDiagnosticStatus = 'OK' | 'MISSING_KEY' | 'INVALID_KEY' | 'QUOTA_EXCEEDED' | 'RATE_LIMITED' | 'MODEL_NOT_FOUND' | 'SERVICE_UNAVAILABLE' | 'GENERATION_ERROR';
 
-  async function probeGeminiAuth(): Promise<boolean> {
+  function categorizeGeminiError(err: any): { code: GeminiDiagnosticStatus; message: string } {
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey || !apiKey.trim()) {
-      isGeminiAuthOperational = false;
-      return false;
+      return { code: 'MISSING_KEY', message: 'Clé GEMINI_API_KEY absente du runtime.' };
     }
-    if (isProbingGemini) return false;
-    isProbingGemini = true;
+    const msg = (err?.message || String(err)).toLowerCase();
+    const status = err?.status || err?.statusCode;
+
+    if (status === 401 || msg.includes('api_key_invalid') || msg.includes('invalid api key') || msg.includes('unauthenticated') || msg.includes('credentials') || msg.includes('access_token_type_unsupported')) {
+      return { code: 'INVALID_KEY', message: 'Clé API Gemini invalide ou non autorisée (401).' };
+    }
+    if (status === 429 || msg.includes('quota') || msg.includes('resource_exhausted')) {
+      if (msg.includes('quota')) {
+        return { code: 'QUOTA_EXCEEDED', message: 'Quota Gemini dépassé (429 RESOURCE_EXHAUSTED).' };
+      }
+      return { code: 'RATE_LIMITED', message: 'Limite de débit Gemini atteinte (Rate limited 429).' };
+    }
+    if (status === 404 || msg.includes('not_found') || msg.includes('model not found')) {
+      return { code: 'MODEL_NOT_FOUND', message: 'Modèle Gemini introuvable ou non supporté (404).' };
+    }
+    if (status === 503 || status === 500 || msg.includes('unavailable') || msg.includes('overloaded')) {
+      return { code: 'SERVICE_UNAVAILABLE', message: 'Service Gemini temporairement indisponible (503).' };
+    }
+    return { code: 'GENERATION_ERROR', message: err?.message || 'Erreur lors de la génération avec Gemini.' };
+  }
+
+  async function diagnoseGemini(): Promise<{
+    operational: boolean;
+    status: GeminiDiagnosticStatus;
+    message?: string;
+  }> {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey || !apiKey.trim()) {
+      return { operational: false, status: 'MISSING_KEY', message: 'Variable GEMINI_API_KEY absente.' };
+    }
     try {
-      const testClient = new GoogleGenAI({
+      const client = new GoogleGenAI({
         apiKey: apiKey.trim(),
         httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
       });
-      await testClient.models.generateContent({
+      const res = await client.models.generateContent({
         model: 'gemini-3.8-flash',
         contents: 'ping'
       });
-      isGeminiAuthOperational = true;
-      console.log('[Gemini] API authenticated successfully.');
-      return true;
+      if (res && res.text) {
+        return { operational: true, status: 'OK', message: 'API Gemini opérationnelle.' };
+      }
+      return { operational: true, status: 'OK', message: 'API Gemini opérationnelle.' };
     } catch (e: any) {
-      isGeminiAuthOperational = false;
-      lastGeminiAuthFailure = Date.now();
-      console.log('[Gemini] Built-in reliable processing active (API credentials unauthenticated or awaiting activation).');
-      return false;
-    } finally {
-      isProbingGemini = false;
+      const cat = categorizeGeminiError(e);
+      return { operational: false, status: cat.code, message: cat.message };
     }
   }
 
-  // Non-blocking initial probe to detect key validity without throwing in endpoints
-  if (process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim()) {
-    setTimeout(() => {
-      probeGeminiAuth().catch(() => {});
-    }, 100);
-  }
+  let aiClient: GoogleGenAI | null = null;
+  let isGeminiAuthOperational = false;
+  let lastGeminiAuthFailure = 0;
 
   function getGeminiClient(): GoogleGenAI | null {
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey || !apiKey.trim()) {
-      return null;
-    }
-    // Only return client if credentials have been verified operational
-    if (!isGeminiAuthOperational) {
-      // If cooldown elapsed, attempt background probe without blocking request
-      if (!isProbingGemini && Date.now() - lastGeminiAuthFailure > GEMINI_COOLDOWN_MS) {
-        probeGeminiAuth().catch(() => {});
-      }
       return null;
     }
     if (!aiClient) {
@@ -8194,37 +8279,27 @@ Réponds UNIQUEMENT avec le texte final prêt à être publié, sans guillemets 
     model?: string;
     contents: any;
     config?: any;
-  }): Promise<{ success: boolean; text?: string; error?: string }> {
-    const client = getGeminiClient();
-    if (!client) {
-      return { success: false, error: 'GEMINI_CLIENT_UNAVAILABLE' };
+  }): Promise<{ success: boolean; text?: string; error?: string; errorCode?: GeminiDiagnosticStatus }> {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey || !apiKey.trim()) {
+      return { success: false, error: 'Clé GEMINI_API_KEY absente', errorCode: 'MISSING_KEY' };
     }
 
     try {
+      const client = getGeminiClient() || new GoogleGenAI({
+        apiKey: apiKey.trim(),
+        httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
+      });
       const response = await client.models.generateContent({
         model: params.model || 'gemini-3.8-flash',
         contents: params.contents,
         config: params.config,
       });
-      isGeminiAuthOperational = true;
       return { success: true, text: response.text || '' };
     } catch (err: any) {
-      const errMsg = err?.message || String(err);
-      const isAuthError = err?.status === 401 || 
-                          errMsg.includes('UNAUTHENTICATED') || 
-                          errMsg.includes('ACCESS_TOKEN_TYPE_UNSUPPORTED') ||
-                          errMsg.includes('API_KEY_INVALID') ||
-                          errMsg.includes('API_KEY_SERVICE_BLOCKED') ||
-                          errMsg.includes('invalid authentication credentials');
-
-      if (isAuthError) {
-        isGeminiAuthOperational = false;
-        lastGeminiAuthFailure = Date.now();
-        console.log('[Gemini] API credentials awaiting validation or unauthenticated (401). Seamlessly using faithful built-in logic.');
-      } else {
-        console.log('[Gemini] Service notice: generation using built-in fallback.');
-      }
-      return { success: false, error: isAuthError ? 'UNAUTHENTICATED' : 'GENERATION_ERROR' };
+      const cat = categorizeGeminiError(err);
+      console.log(`[Gemini] API notice (${cat.code}):`, cat.message);
+      return { success: false, error: cat.message, errorCode: cat.code };
     }
   }
 
@@ -9763,24 +9838,18 @@ Return ONLY the plain text caption, with no quotes or introduction.`;
   });
 
   // --- GENERAL AI DESCRIPTION GENERATOR ---
-  app.post('/api/ai/generate-description', (req, res) => {
-    const { entityType, name, keywords, genre, cuisine, currentDescription } = req.body;
+  app.post('/api/ai/generate-description', async (req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    const { entityType, name, keywords, genre, cuisine, currentDescription } = req.body || {};
     
-    const client = getGeminiClient();
-    if (!client) {
-      const fallbacks: Record<string, string> = {
-        restaurant: `Découvrez une expérience gastronomique d'exception au cœur de ${name || 'notre établissement'}. Une cuisine raffinée, élaborée avec des produits locaux de saison et une touche d'originalité signature.`,
-        dj: `Sets vinyles & électro chaleureux sélectionnés par ${name || 'notre DJ résident'}. Une ambiance sonore immersive et élégante pour accompagner vos repas et apéritifs festifs.`,
-        youtuber: `Suivez les aventures et dégustations culinaires exclusives de ${name || 'notre créateur food'}. Analyse authentique, pépites culinaires et immersion totale dans l'univers de la gastronomie.`,
-        culinary_show: `Une émission culinaire captivante présentée par ${name || 'nos Chefs hôtes'}. Recettes secrètes, crash-tests en cuisine et masterclasses gourmandes en direct.`,
-        popup: `Plongez dans l'expérience immersive ! ${name || 'Découvrez nos contenus exclusifs'} : DJs live, émissions culinaires et YouTubers food pour une ambiance inégalée.`,
-        dish: `Une spécialité gourmande signature préparée minute par notre Chef à partir d'ingrédients nobles et frais.`,
-        formula: `Formule gourmande complète combinant nos meilleures spécialités du jour à un tarif avantageux.`
-      };
-
-      return res.json({
-        success: true,
-        description: fallbacks[entityType] || `Découvrez ${name || 'notre Sélection Spéciale'}, une expérience gourmande unique combinant passion, qualité et authenticité.`
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey || !apiKey.trim()) {
+      return res.status(503).json({
+        success: false,
+        error: {
+          code: 'MISSING_KEY',
+          message: 'La clé API Gemini (GEMINI_API_KEY) n\'est pas configurée dans l\'environnement.'
+        }
       });
     }
 
@@ -9790,23 +9859,28 @@ Context / Details: ${keywords || genre || cuisine || ''}.
 Make it sound authentic, enticing, and high-end for visitors on the platform.
 Include 1 fitting emoji if relevant. Output ONLY the description text without any quotes or explanations.`;
 
-    client.models.generateContent({
-      model: 'gemini-3.8-flash',
-      contents: prompt
-    })
-    .then((response) => {
-      const description = response.text?.trim() || '';
-      res.json({ success: true, description });
-    })
-    .catch((err: any) => {
-      isGeminiAuthOperational = false;
-      lastGeminiAuthFailure = Date.now();
-      console.log('[AI General Description Notice]', err?.message || 'fallback');
-      res.json({
-        success: true,
-        description: `Bienvenue dans l'univers de ${name || 'notre Sélection'}. Une expérience immersive et chaleureuse réunissant qualité, passion et moments inoubliables.`
+    try {
+      const client = new GoogleGenAI({
+        apiKey: apiKey.trim(),
+        httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
       });
-    });
+      const response = await client.models.generateContent({
+        model: 'gemini-3.8-flash',
+        contents: prompt
+      });
+      const description = response.text?.trim() || '';
+      return res.status(200).json({ success: true, description });
+    } catch (err: any) {
+      const diag = categorizeGeminiError(err);
+      console.error('[AI General Description Error]', diag.code, err?.message);
+      return res.status(500).json({
+        success: false,
+        error: {
+          code: diag.code,
+          message: diag.message
+        }
+      });
+    }
   });
 
 
