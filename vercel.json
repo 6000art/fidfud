@@ -7,11 +7,16 @@
   "functions": {
     "api/index.ts": {
       "includeFiles": "{data_store.json,firebase-applet-config.json,server.js}"
+    },
+    "api/server-import-health.ts": {
+      "includeFiles": "{data_store.json,firebase-applet-config.json,server.js}"
     }
   },
   "rewrites": [
     { "source": "/api/health", "destination": "/api/health" },
     { "source": "/api/gemini-health", "destination": "/api/gemini-health" },
+    { "source": "/api/express-health", "destination": "/api/express-health" },
+    { "source": "/api/server-import-health", "destination": "/api/server-import-health" },
     { "source": "/api/(.*)", "destination": "/api" },
     { "source": "/(.*)", "destination": "/index.html" }
   ],
