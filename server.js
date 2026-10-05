@@ -2340,16 +2340,18 @@ var PORT = 3e3;
 app.use(express.json({ limit: "100mb" }));
 app.use(express.urlencoded({ limit: "100mb", extended: true }));
 loadData();
-setupAutoCacheCleaner();
-syncFromFirestore().catch((err) => {
-  console.error("[Firebase Server] Background Firestore sync failed:", err);
-});
-setTimeout(() => {
-  console.log("[Scheduled Validator] Running scheduled video source validation checks...");
-  runBackgroundVideosValidation().catch((err) => {
-    console.error("[Scheduled Validator] Validation check error:", err);
+if (!isVercelRuntime) {
+  setupAutoCacheCleaner();
+  syncFromFirestore().catch((err) => {
+    console.error("[Firebase Server] Background Firestore sync failed:", err);
   });
-}, 1e4);
+  setTimeout(() => {
+    console.log("[Scheduled Validator] Running scheduled video source validation checks...");
+    runBackgroundVideosValidation().catch((err) => {
+      console.error("[Scheduled Validator] Validation check error:", err);
+    });
+  }, 1e4);
+}
 app.use((req, res, next) => {
   if (req.method !== "GET") {
     res.on("finish", () => {
@@ -2918,6 +2920,74 @@ app.get("/api/health", (req, res) => {
     runtime: isVercelRuntime ? "vercel" : "standalone",
     server: "ok"
   });
+});
+app.get("/api/gemini-health", async (req, res) => {
+  res.setHeader("Content-Type", "application/json");
+  const rawKey = process.env.GEMINI_API_KEY;
+  const keyPresent = Boolean(rawKey && rawKey.trim().length > 0);
+  if (!keyPresent) {
+    return res.status(200).json({
+      success: false,
+      keyPresent: false,
+      geminiOperational: false,
+      errorCode: "MISSING_KEY",
+      errorMessage: "La variable d'environnement GEMINI_API_KEY est absente."
+    });
+  }
+  try {
+    const ai = new GoogleGenAI({ apiKey: rawKey.trim() });
+    let result;
+    try {
+      result = await ai.models.generateContent({
+        model: "gemini-3.8-flash",
+        contents: "ping"
+      });
+    } catch (primaryErr) {
+      const primaryMsg = primaryErr?.message || "";
+      if (primaryMsg.includes("not found") || primaryErr?.status === 404) {
+        result = await ai.models.generateContent({
+          model: "gemini-2.5-flash",
+          contents: "ping"
+        });
+      } else {
+        throw primaryErr;
+      }
+    }
+    if (!result || !result.text) {
+      return res.status(200).json({
+        success: false,
+        keyPresent: true,
+        geminiOperational: false,
+        errorCode: "SERVICE_UNAVAILABLE",
+        errorMessage: "R\xE9ponse vide re\xE7ue du service Gemini."
+      });
+    }
+    return res.status(200).json({
+      success: true,
+      keyPresent: true,
+      geminiOperational: true
+    });
+  } catch (error) {
+    const status = error?.status || error?.statusCode || 0;
+    const rawMsg = error?.message || String(error) || "";
+    const cleanMsg = rawMsg.replace(/AIza[0-9A-Za-z-_]{35}/g, "[REDACTED_KEY]");
+    const lower = cleanMsg.toLowerCase();
+    let errorCode = "SERVICE_UNAVAILABLE";
+    if (status === 400 || lower.includes("api_key_invalid") || lower.includes("invalid api key") || lower.includes("api key not valid") || lower.includes("forbidden")) {
+      errorCode = "INVALID_KEY";
+    } else if (status === 429 || lower.includes("resource_exhausted") || lower.includes("quota") || lower.includes("rate limit") || lower.includes("too many requests")) {
+      errorCode = lower.includes("quota") ? "QUOTA_EXCEEDED" : "RATE_LIMITED";
+    } else if (status === 404 || lower.includes("model not found") || lower.includes("not_found") || lower.includes("is not found")) {
+      errorCode = "MODEL_NOT_FOUND";
+    }
+    return res.status(200).json({
+      success: false,
+      keyPresent: true,
+      geminiOperational: false,
+      errorCode,
+      errorMessage: cleanMsg
+    });
+  }
 });
 app.get("/api/admin/diagnostics", async (req, res) => {
   res.setHeader("Content-Type", "application/json");
