@@ -10,6 +10,7 @@ import { initializeApp as initAdminApp, cert, getApps as getAdminApps } from "fi
 import { getAuth as getAdminAuth } from "firebase-admin/auth";
 import { initializeApp } from "firebase/app";
 import { getFirestore, collection, getDocs, setDoc, doc, deleteDoc, getDoc, setLogLevel, disableNetwork, writeBatch } from "firebase/firestore";
+import { PDFParse } from "pdf-parse";
 try {
   setLogLevel("silent");
 } catch (e) {
@@ -1120,7 +1121,14 @@ function mergeRestaurantData(target, source) {
     pointsReceived: Math.max(target.pointsReceived || 0, source.pointsReceived || 0),
     isFavorite: target.isFavorite || source.isFavorite,
     isPublished: target.isPublished ?? source.isPublished ?? true,
-    isOrderingEnabled: target.isOrderingEnabled ?? source.isOrderingEnabled ?? true
+    isOrderingEnabled: target.isOrderingEnabled ?? source.isOrderingEnabled ?? true,
+    photos: Array.from(/* @__PURE__ */ new Set([...target.photos || [], ...source.photos || []])),
+    postalCode: source.postalCode || target.postalCode,
+    city: source.city || target.city,
+    openingHours: source.openingHours || target.openingHours,
+    dataSources: Array.from(/* @__PURE__ */ new Set([...target.dataSources || [], ...source.dataSources || []])),
+    dataConfidence: Math.max(target.dataConfidence || 0, source.dataConfidence || 0),
+    lastEnrichedAt: source.lastEnrichedAt || target.lastEnrichedAt || (/* @__PURE__ */ new Date()).toISOString()
   };
   return merged;
 }
@@ -6934,6 +6942,490 @@ var AVAILABLE_FOOD_VIDEOS = [
   { url: "https://assets.mixkit.co/videos/preview/mixkit-chef-decorating-a-gourmet-plate-with-herbs-and-sauce-40247-large.mp4", category: "french_gourmet", title: "Dressage raffin\xE9 \xE0 la pince d'une assiette bistronomique" },
   { url: "https://assets.mixkit.co/videos/preview/mixkit-bartender-pouring-a-colorful-cocktail-in-a-glass-41619-large.mp4", category: "cocktails_bar", title: "Cr\xE9ation d'un cocktail signature rafra\xEEchissant au shaker" }
 ];
+async function geocodeAddressReal(address, city) {
+  const raw = (address || "").trim();
+  if (!raw || raw.length < 3) return null;
+  const queryParts = [raw];
+  if (city && !raw.toLowerCase().includes(city.toLowerCase())) {
+    queryParts.push(city);
+  }
+  const query = queryParts.join(" ").replace(/[,]+/g, " ").replace(/\s+/g, " ").trim();
+  try {
+    const gouvUrl = `https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(query)}&limit=1`;
+    const gouvRes = await fetch(gouvUrl, {
+      headers: { "Accept": "application/json", "User-Agent": "FidfudApp/1.0" },
+      signal: AbortSignal.timeout(3500)
+    });
+    if (gouvRes.ok) {
+      const data = await gouvRes.json();
+      if (data?.features?.[0]?.geometry?.coordinates) {
+        const [lng, lat] = data.features[0].geometry.coordinates;
+        const props = data.features[0].properties || {};
+        const district = props.city || props.postcode || city || "France";
+        if (typeof lat === "number" && typeof lng === "number" && !isNaN(lat) && !isNaN(lng)) {
+          return {
+            lat: Number(lat.toFixed(6)),
+            lng: Number(lng.toFixed(6)),
+            district: props.context ? `${props.city} (${props.postcode})` : district
+          };
+        }
+      }
+    }
+  } catch {
+  }
+  try {
+    const nomUrl = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1`;
+    const nomRes = await fetch(nomUrl, {
+      headers: { "Accept": "application/json", "User-Agent": "FidfudApp/1.0 (culinary-scout@fidfud.fr)" },
+      signal: AbortSignal.timeout(3500)
+    });
+    if (nomRes.ok) {
+      const nomData = await nomRes.json();
+      if (Array.isArray(nomData) && nomData[0]) {
+        const lat = parseFloat(nomData[0].lat);
+        const lng = parseFloat(nomData[0].lon);
+        if (!isNaN(lat) && !isNaN(lng)) {
+          const district = nomData[0].display_name ? nomData[0].display_name.split(",")[0].trim() : city || "Secteur Local";
+          return {
+            lat: Number(lat.toFixed(6)),
+            lng: Number(lng.toFixed(6)),
+            district
+          };
+        }
+      }
+    }
+  } catch {
+  }
+  return null;
+}
+async function parsePdfMenu(pdfBuffer, origin) {
+  const dishes2 = [];
+  try {
+    const parser = new PDFParse({ data: new Uint8Array(pdfBuffer) });
+    const textResult = await parser.getText();
+    await parser.destroy();
+    const fullText = textResult && typeof textResult === "object" && "text" in textResult ? textResult.text : String(textResult || "");
+    if (!fullText || fullText.trim().length < 10) return dishes2;
+    const lines = fullText.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    let currentCategory = "Plat";
+    const seenNames = /* @__PURE__ */ new Set();
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const lower = line.toLowerCase();
+      if (/^(entr[eé]es?|starters?|pour commencer|tapas|hors d'oeuvre)/i.test(lower)) {
+        currentCategory = "Entr\xE9e";
+        continue;
+      }
+      if (/^(plats?|mains?|nos plats|viandes?|poissons?|pasta|pizzas?|burgers?|grillades?)/i.test(lower)) {
+        currentCategory = "Plat";
+        continue;
+      }
+      if (/^(desserts?|douceurs?|sucr[eé]s?|glaces?|patisseries?)/i.test(lower)) {
+        currentCategory = "Dessert";
+        continue;
+      }
+      if (/^(boissons?|drinks?|cocktails?|vins?|caf[eé]s?|ap[eé]ritifs?|softs?)/i.test(lower)) {
+        currentCategory = "Boisson";
+        continue;
+      }
+      const priceMatch = line.match(/(\d{1,3}(?:[.,]\d{1,2})?)\s*(?:€|eur|euros?\b)/i);
+      if (priceMatch) {
+        const rawPrice = priceMatch[1].replace(",", ".");
+        const priceNum = parseFloat(rawPrice);
+        if (!isNaN(priceNum) && priceNum > 1 && priceNum < 300) {
+          let nameCandidate = line.replace(priceMatch[0], "").trim();
+          nameCandidate = nameCandidate.replace(/^[-–—•*.]+\s*/, "").replace(/[-–—•*.]+$/, "").trim();
+          if (!nameCandidate && i > 0) {
+            nameCandidate = lines[i - 1].replace(/^[-–—•*.]+\s*/, "").trim();
+          }
+          if (nameCandidate && nameCandidate.length >= 3 && nameCandidate.length <= 70 && !seenNames.has(nameCandidate.toLowerCase())) {
+            seenNames.add(nameCandidate.toLowerCase());
+            let descCandidate = "";
+            if (i + 1 < lines.length && !lines[i + 1].match(/(\d{1,3}(?:[.,]\d{1,2})?)\s*(?:€|eur)/i) && lines[i + 1].length < 120) {
+              descCandidate = lines[i + 1];
+            }
+            dishes2.push({
+              name: nameCandidate,
+              description: descCandidate,
+              price: priceNum,
+              category: currentCategory
+            });
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("[PDF Menu Parser] Benign error reading PDF:", err);
+  }
+  return dishes2;
+}
+async function parsePageContent(pageUrl, isSubpage = false) {
+  const pageData = {
+    url: pageUrl,
+    title: "",
+    description: "",
+    siteName: "",
+    cleanName: "",
+    ogImages: [],
+    heroImages: [],
+    logoUrl: null,
+    bannerUrl: null,
+    photos: [],
+    addressHint: null,
+    postalCodeHint: null,
+    cityHint: null,
+    phoneHint: null,
+    emailHint: null,
+    openingHoursHint: null,
+    extractedBodyText: "",
+    dishes: [],
+    geo: void 0,
+    internalLinks: [],
+    pdfLinks: [],
+    inferredCategory: "Restaurant",
+    inferredCategories: ["Restaurant"]
+  };
+  let html = "";
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), isSubpage ? 4500 : 6500);
+    const res = await fetch(pageUrl, {
+      signal: controller.signal,
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Language": "fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7",
+        "Cache-Control": "no-cache"
+      },
+      redirect: "follow"
+    });
+    clearTimeout(timeoutId);
+    if (res.ok) {
+      html = await res.text();
+    } else {
+      try {
+        const mobCtrl = new AbortController();
+        const mobTimer = setTimeout(() => mobCtrl.abort(), 3500);
+        const mobRes = await fetch(pageUrl, {
+          signal: mobCtrl.signal,
+          headers: {
+            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4.1 Mobile/15E148 Safari/604.1",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "fr-FR,fr;q=0.9"
+          },
+          redirect: "follow"
+        });
+        clearTimeout(mobTimer);
+        if (mobRes.ok) html = await mobRes.text();
+      } catch {
+      }
+    }
+  } catch {
+    return pageData;
+  }
+  if (!html) return pageData;
+  try {
+    const urlObj = new URL(pageUrl);
+    const origin = urlObj.origin;
+    const hostname = urlObj.hostname;
+    const resolveUrl = (raw) => {
+      if (!raw) return "";
+      try {
+        if (raw.startsWith("//")) return "https:" + raw;
+        if (raw.startsWith("http://") || raw.startsWith("https://")) return raw;
+        return new URL(raw, pageUrl).href;
+      } catch {
+        return "";
+      }
+    };
+    const titleM = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+    if (titleM && titleM[1]) pageData.title = titleM[1].replace(/\s+/g, " ").trim();
+    const metaDescM = html.match(/<meta[^>]+name=["'](?:description|twitter:description)["'][^>]+content=["']([\s\S]*?)["']/i) || html.match(/<meta[^>]+content=["']([\s\S]*?)["'][^>]+name=["'](?:description|twitter:description)["']/i);
+    if (metaDescM && metaDescM[1]) pageData.description = metaDescM[1].replace(/\s+/g, " ").trim();
+    const ogTitleM = html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([\s\S]*?)["']/i);
+    if (ogTitleM && ogTitleM[1]) pageData.title = pageData.title || ogTitleM[1].trim();
+    const ogDescM = html.match(/<meta[^>]+property=["']og:description["'][^>]+content=["']([\s\S]*?)["']/i);
+    if (ogDescM && ogDescM[1]) pageData.description = pageData.description || ogDescM[1].trim();
+    const ogSiteNameM = html.match(/<meta[^>]+property=["']og:site_name["'][^>]+content=["']([\s\S]*?)["']/i);
+    if (ogSiteNameM && ogSiteNameM[1]) pageData.siteName = ogSiteNameM[1].trim();
+    const rawNameToClean = pageData.siteName || pageData.title || "";
+    if (rawNameToClean) {
+      const parsedClean = rawNameToClean.split(/[-|—•–]/)[0].replace(/^(Accueil|Home|Bienvenue chez|Restaurant|Le restaurant)\s+/i, "").trim();
+      if (parsedClean.length >= 2) pageData.cleanName = parsedClean;
+    }
+    const ogImgMatches = html.matchAll(/<meta[^>]+property=["'](?:og:image|og:image:url|og:image:secure_url|twitter:image)["'][^>]+content=["']([^"']+)["']/gi);
+    for (const m of ogImgMatches) {
+      const imgUrl = resolveUrl(m[1]);
+      if (imgUrl && !pageData.ogImages.includes(imgUrl)) {
+        pageData.ogImages.push(imgUrl);
+      }
+    }
+    let jsonLdLogo = null;
+    const jsonLdMatches = html.matchAll(/<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi);
+    for (const jm of jsonLdMatches) {
+      try {
+        const parsed = JSON.parse(jm[1].trim());
+        const schemas = Array.isArray(parsed) ? parsed : parsed["@graph"] || [parsed];
+        for (const s of schemas) {
+          if (!s || typeof s !== "object") continue;
+          if (s.name && !pageData.siteName) pageData.siteName = String(s.name);
+          if (s.telephone && !pageData.phoneHint) pageData.phoneHint = String(s.telephone).trim();
+          if (s.email && !pageData.emailHint) pageData.emailHint = String(s.email).trim();
+          if (s.logo) {
+            const lUrl = typeof s.logo === "string" ? s.logo : s.logo.url || s.logo.contentUrl;
+            if (lUrl) jsonLdLogo = resolveUrl(lUrl);
+          }
+          if (s.image) {
+            const iUrls = Array.isArray(s.image) ? s.image : [s.image];
+            for (const iu of iUrls) {
+              const finalImg = resolveUrl(typeof iu === "string" ? iu : iu?.url || iu?.contentUrl);
+              if (finalImg && !pageData.heroImages.includes(finalImg)) {
+                pageData.heroImages.push(finalImg);
+              }
+            }
+          }
+          if (s.address) {
+            if (typeof s.address === "string") {
+              pageData.addressHint = s.address.trim();
+            } else if (typeof s.address === "object") {
+              if (s.address.postalCode) pageData.postalCodeHint = String(s.address.postalCode).trim();
+              if (s.address.addressLocality) pageData.cityHint = String(s.address.addressLocality).trim();
+              const addr = [s.address.streetAddress, s.address.postalCode, s.address.addressLocality, s.address.addressCountry].filter(Boolean).join(", ");
+              if (addr) pageData.addressHint = addr;
+            }
+          }
+          if (s.geo && typeof s.geo === "object") {
+            const lat = parseFloat(s.geo.latitude);
+            const lng = parseFloat(s.geo.longitude);
+            if (!isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0) {
+              pageData.geo = { lat, lng };
+            }
+          }
+          if (s.openingHours) {
+            pageData.openingHoursHint = Array.isArray(s.openingHours) ? s.openingHours : [String(s.openingHours)];
+          }
+          const menuRaw = s.hasMenu || s.menu;
+          if (menuRaw) {
+            const menuSections = Array.isArray(menuRaw) ? menuRaw : [menuRaw];
+            for (const mSec of menuSections) {
+              const items = mSec.hasMenuItem || mSec.itemListElement || (mSec["@type"] === "MenuItem" ? [mSec] : []);
+              if (Array.isArray(items)) {
+                for (const mi of items) {
+                  if (mi && mi.name) {
+                    const p = mi.offers?.price || mi.price;
+                    const priceNum = typeof p === "number" ? p : parseFloat(String(p).replace(",", "."));
+                    const dImg = typeof mi.image === "string" ? mi.image : mi.image?.url || "";
+                    pageData.dishes.push({
+                      name: String(mi.name).trim(),
+                      description: mi.description ? String(mi.description).trim() : "",
+                      price: !isNaN(priceNum) && priceNum > 0 ? priceNum : 14.5,
+                      category: mi.category || "Plat",
+                      imageUrl: dImg ? resolveUrl(dImg) : void 0
+                    });
+                  }
+                }
+              }
+            }
+          }
+        }
+      } catch {
+      }
+    }
+    if (jsonLdLogo && jsonLdLogo.startsWith("http")) {
+      pageData.logoUrl = jsonLdLogo;
+    }
+    if (!pageData.logoUrl) {
+      const logoImgM = html.match(/<img[^>]+(?:class|id|alt)=["'][^"']*(?:logo|brand|site-logo)[^"']*["'][^>]*>/i);
+      if (logoImgM) {
+        const srcM = logoImgM[0].match(/(?:src|data-src|data-lazy-src|data-original)=["']([^"']+)["']/i);
+        if (srcM && srcM[1]) {
+          const resolved = resolveUrl(srcM[1]);
+          if (resolved && !resolved.includes("pixel") && !resolved.includes("tracker")) {
+            pageData.logoUrl = resolved;
+          }
+        }
+      }
+    }
+    if (!pageData.logoUrl) {
+      const headerM = html.match(/<(?:header|nav)[^>]*>([\s\S]*?)<\/(?:header|nav)>/i);
+      if (headerM) {
+        const imgM = headerM[1].match(/<img[^>]+(?:src|data-src)=["']([^"']+)["'][^>]*>/i);
+        if (imgM && imgM[1]) {
+          const resolved = resolveUrl(imgM[1]);
+          if (resolved && !resolved.includes("pixel") && !resolved.includes("icon") && !resolved.includes("flag")) {
+            pageData.logoUrl = resolved;
+          }
+        }
+      }
+    }
+    if (!pageData.logoUrl) {
+      const ogLogoM = html.match(/<meta[^>]+property=["']og:logo["'][^>]+content=["']([^"']+)["']/i);
+      if (ogLogoM && ogLogoM[1]) {
+        pageData.logoUrl = resolveUrl(ogLogoM[1]);
+      }
+    }
+    if (!pageData.logoUrl) {
+      const appleIconM = html.match(/<link[^>]+rel=["']apple-touch-icon["'][^>]+href=["']([^"']+)["']/i);
+      if (appleIconM && appleIconM[1]) {
+        const resolved = resolveUrl(appleIconM[1]);
+        if (resolved) pageData.logoUrl = resolved;
+      }
+    }
+    const scoredImages = [];
+    const candidateImgMatches = html.matchAll(/<img[^>]+(?:src|data-src|data-lazy-src)=["']([^"']+)["'][^>]*>/gi);
+    for (const im of candidateImgMatches) {
+      const tag = im[0];
+      const src = resolveUrl(im[1]);
+      if (!src || !src.startsWith("http")) continue;
+      const srcLower = src.toLowerCase();
+      const tagLower = tag.toLowerCase();
+      if (srcLower.includes("pixel") || srcLower.includes("tracker") || srcLower.includes("1x1") || srcLower.includes("favicon") || srcLower.includes("avatar") || srcLower.includes("sprite") || srcLower.includes("badge") || srcLower.includes("tripadvisor") || srcLower.includes("facebook") || srcLower.includes("instagram") || srcLower.includes("flag") || srcLower.includes("rating") || srcLower.includes("loader") || srcLower.includes("spinner") || srcLower.includes("placeholder")) {
+        continue;
+      }
+      let score = 10;
+      if (tagLower.includes("hero") || tagLower.includes("banner") || tagLower.includes("cover") || tagLower.includes("masthead")) score += 50;
+      if (srcLower.includes("hero") || srcLower.includes("banner") || srcLower.includes("cover")) score += 40;
+      if (srcLower.includes("restaurant") || srcLower.includes("ambiance") || srcLower.includes("terrasse") || srcLower.includes("salle") || srcLower.includes("plat") || srcLower.includes("food")) score += 30;
+      if (srcLower.includes(".jpg") || srcLower.includes(".jpeg") || srcLower.includes(".webp") || srcLower.includes(".png")) score += 15;
+      if (tagLower.includes('width="1') || tagLower.includes('width="2') || tagLower.includes("1920") || tagLower.includes("1200")) score += 20;
+      scoredImages.push({ url: src, score });
+    }
+    const bgMatches = html.matchAll(/style=["'][^"']*(?:background(?:-image)?)\s*:\s*url\(["']?([^"')]+)["']?\)[^"']*["']/gi);
+    for (const bm of bgMatches) {
+      const bgUrl = resolveUrl(bm[1]);
+      if (bgUrl && bgUrl.startsWith("http") && !bgUrl.includes("pixel") && !bgUrl.includes("icon")) {
+        scoredImages.push({ url: bgUrl, score: 45 });
+      }
+    }
+    for (const og of pageData.ogImages) {
+      if (!og.toLowerCase().includes("logo") && !og.toLowerCase().includes("icon")) {
+        scoredImages.push({ url: og, score: 35 });
+      }
+    }
+    scoredImages.sort((a, b) => b.score - a.score);
+    const seenPhotos = /* @__PURE__ */ new Set();
+    if (pageData.logoUrl) seenPhotos.add(pageData.logoUrl);
+    for (const item of scoredImages) {
+      if (!seenPhotos.has(item.url)) {
+        seenPhotos.add(item.url);
+        pageData.photos.push(item.url);
+      }
+    }
+    pageData.bannerUrl = pageData.photos[0] || null;
+    pageData.heroImages = pageData.photos.slice(0, 10);
+    const mailtoM = html.match(/href=["']mailto:([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})["']/i);
+    if (mailtoM && mailtoM[1] && !pageData.emailHint) {
+      const candidate = mailtoM[1].trim();
+      if (!candidate.includes("example.com") && !candidate.includes("sentry") && !candidate.includes("wix.com")) {
+        pageData.emailHint = candidate;
+      }
+    }
+    const telM = html.match(/href=["']tel:([^"'\s?]+)["']/i);
+    if (telM && telM[1] && !pageData.phoneHint) {
+      const candidate = telM[1].replace(/[\s.-]/g, "").trim();
+      if (candidate.length >= 8) pageData.phoneHint = telM[1].trim();
+    }
+    const cleanText = html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, " ").replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, " ").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+    pageData.extractedBodyText = cleanText.substring(0, 4e3);
+    if (!pageData.emailHint) {
+      const emailM = cleanText.match(/\b([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})\b/);
+      if (emailM && emailM[1]) {
+        const em = emailM[1].trim();
+        if (!em.includes("example.com") && !em.includes("wix") && !em.includes("wordpress") && !em.includes("sentry") && !em.endsWith(".png") && !em.endsWith(".jpg")) {
+          pageData.emailHint = em;
+        }
+      }
+    }
+    if (!pageData.phoneHint) {
+      const phoneM = cleanText.match(/(?:(?:\+|00)33|0)[1-9](?:[\s.-]?\d{2}){4}/);
+      if (phoneM) pageData.phoneHint = phoneM[0].trim();
+    }
+    if (!pageData.addressHint) {
+      const addressM = cleanText.match(/\d+[\s\w,.-]+(?:Rue|Avenue|Boulevard|Place|Allée|Quai|Chemin|Passage|Cours|Route)\b[\s\w,.-]+(?:\d{5})?\s*(?:[A-ZÀ-ÿ][a-zà-ÿ]+)?/i);
+      if (addressM) pageData.addressHint = addressM[0].trim();
+    }
+    if (pageData.addressHint) {
+      const cpM = pageData.addressHint.match(/\b(\d{5})\b\s*([A-ZÀ-ÿa-zà-ÿ\s-]+)/);
+      if (cpM) {
+        if (!pageData.postalCodeHint) pageData.postalCodeHint = cpM[1];
+        if (!pageData.cityHint) pageData.cityHint = cpM[2].trim();
+      }
+    }
+    const priceRegex = /(\d{1,3}(?:[.,]\d{1,2})?)\s*(?:€|EUR)/gi;
+    const itemRegex = /<(?:div|li|article|tr)[^>]*class=["']([^"']*(?:dish|item|product|plat|card|menu|entry|tarifs|prix)[^"']*)["'][^>]*>([\s\S]*?)<\/(?:div|li|article|tr)>/gi;
+    let itemMatch;
+    const seenNames = /* @__PURE__ */ new Set();
+    while ((itemMatch = itemRegex.exec(html)) !== null && pageData.dishes.length < 20) {
+      const block = itemMatch[2];
+      const priceM = block.match(priceRegex);
+      if (!priceM) continue;
+      const titleM2 = block.match(/<(?:h[1-6]|strong|b|span|p)[^>]*class=["'][^"']*(?:title|name|nom|dish)[^"']*["'][^>]*>([\s\S]*?)<\/(?:h[1-6]|strong|b|span|p)>/i) || block.match(/<(?:h[2-5]|strong)>([\s\S]*?)<\/(?:h[2-5]|strong)>/i);
+      if (!titleM2) continue;
+      const dName = titleM2[1].replace(/<[^>]+>/g, "").trim();
+      if (!dName || dName.length < 3 || dName.length > 70 || seenNames.has(dName.toLowerCase())) continue;
+      seenNames.add(dName.toLowerCase());
+      const rawPrice = priceM[0].replace(/[^\d.,]/g, "").replace(",", ".");
+      const pVal = parseFloat(rawPrice);
+      if (isNaN(pVal) || pVal <= 0 || pVal > 300) continue;
+      const descM = block.match(/<(?:p|span)[^>]*class=["'][^"']*(?:desc|detail|ingredients|composition)[^"']*["'][^>]*>([\s\S]*?)<\/(?:p|span)>/i) || block.match(/<p[^>]*>([\s\S]*?)<\/p>/i);
+      const dDesc = descM ? descM[1].replace(/<[^>]+>/g, "").trim() : "";
+      const dImgM = block.match(/<img[^>]+(?:src|data-src)=["']([^"']+)["']/i);
+      const dImg = dImgM ? resolveUrl(dImgM[1]) : "";
+      pageData.dishes.push({
+        name: dName,
+        description: dDesc,
+        price: pVal,
+        category: "Plat",
+        imageUrl: dImg && dImg.startsWith("http") ? dImg : void 0
+      });
+    }
+    if (!isSubpage) {
+      const linkMatches = html.matchAll(/<a[^>]+href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi);
+      for (const lm of linkMatches) {
+        const href = lm[1].trim();
+        const text = lm[2].replace(/<[^>]+>/g, "").toLowerCase().trim();
+        if (!href || href.startsWith("#") || href.startsWith("javascript:") || href.startsWith("mailto:") || href.startsWith("tel:")) continue;
+        if (href.toLowerCase().endsWith(".pdf") || href.toLowerCase().includes(".pdf") && (href.includes("carte") || href.includes("menu") || href.includes("tarifs"))) {
+          const resolvedPdf = resolveUrl(href);
+          if (resolvedPdf && resolvedPdf.startsWith("http") && !pageData.pdfLinks.includes(resolvedPdf)) {
+            try {
+              const pdfObj = new URL(resolvedPdf);
+              if (pdfObj.hostname === hostname || pdfObj.hostname.endsWith("." + hostname)) {
+                pageData.pdfLinks.push(resolvedPdf);
+              }
+            } catch {
+            }
+          }
+          continue;
+        }
+        if (href.endsWith(".jpg") || href.endsWith(".png") || href.endsWith(".webp")) continue;
+        let fullLink = "";
+        try {
+          if (href.startsWith("http")) {
+            const parsed = new URL(href);
+            if (parsed.hostname === hostname || parsed.hostname.endsWith("." + hostname)) {
+              fullLink = href;
+            }
+          } else if (href.startsWith("/")) {
+            fullLink = `${origin}${href}`;
+          }
+        } catch {
+        }
+        if (fullLink && !pageData.internalLinks.includes(fullLink)) {
+          const linkCheck = (fullLink + " " + text).toLowerCase();
+          const isMenuLink = linkCheck.includes("menu") || linkCheck.includes("carte") || linkCheck.includes("plat") || linkCheck.includes("food") || linkCheck.includes("order") || linkCheck.includes("commander");
+          const isContactLink = linkCheck.includes("contact") || linkCheck.includes("acces") || linkCheck.includes("venir") || linkCheck.includes("trouver") || linkCheck.includes("adresse") || linkCheck.includes("location");
+          const isAboutLink = linkCheck.includes("about") || linkCheck.includes("propos") || linkCheck.includes("restaurant") || linkCheck.includes("infos");
+          if (isMenuLink || isContactLink || isAboutLink) {
+            pageData.internalLinks.push(fullLink);
+          }
+        }
+      }
+    }
+  } catch {
+  }
+  return pageData;
+}
 async function scrapeUrlMetadata(rawUrl) {
   let cleanUrl = rawUrl.trim();
   if (!cleanUrl.startsWith("http://") && !cleanUrl.startsWith("https://")) {
@@ -6952,420 +7444,108 @@ async function scrapeUrlMetadata(rawUrl) {
     cleanUrl = parsedUrlObj.href;
   } catch {
   }
-  const metadata = {
-    url: cleanUrl,
-    title: "",
-    cleanName: "",
-    description: "",
-    siteName: "",
-    ogImages: [],
-    heroImages: [],
-    logoUrl: "",
-    bannerUrl: "",
-    videos: [],
-    jsonLd: [],
-    addressHint: "",
-    phoneHint: "",
-    emailHint: "",
-    extractedBodyText: "",
-    dishes: [],
-    inferredCategory: "Restaurant",
-    inferredCategories: ["Restaurant"]
-  };
-  try {
-    const u = new URL(cleanUrl);
-    const hostParts = u.hostname.replace(/^www\./, "").split(".");
-    const domainSlug = hostParts[0] || "";
-    const pathSlug = u.pathname.split("/").filter(Boolean).pop() || "";
-    const chosenSlug = pathSlug && pathSlug.length > 3 && !["fr", "en", "menu", "carte", "contact", "home"].includes(pathSlug.toLowerCase()) ? pathSlug : domainSlug;
-    metadata.cleanName = chosenSlug.replace(/[-_]+/g, " ").replace(/([a-z])([A-Z])/g, "$1 $2").replace(/(pizzeria|burger|burgers|sushi|sushis|ramen|cafe|café|bistrot|bistro|restaurant|trattoria|tacos|brunch|bakery|bar)/gi, " $1").replace(/\s+/g, " ").replace(/\b\w/g, (l) => l.toUpperCase()).trim();
-    const slugLower = (chosenSlug + " " + cleanUrl).toLowerCase();
-    if (slugLower.includes("pizz") || slugLower.includes("ital")) {
-      metadata.inferredCategory = "Italien";
-      metadata.inferredCategories = ["Italien", "Pizze", "P\xE2tes"];
-    } else if (slugLower.includes("burg") || slugLower.includes("smash")) {
-      metadata.inferredCategory = "Burgers";
-      metadata.inferredCategories = ["Burgers", "Street Food"];
-    } else if (slugLower.includes("sush") || slugLower.includes("ramen") || slugLower.includes("japon")) {
-      metadata.inferredCategory = "Japonais";
-      metadata.inferredCategories = ["Japonais", "Sushis", "Ramen"];
-    } else if (slugLower.includes("caf") || slugLower.includes("brunch") || slugLower.includes("croissant")) {
-      metadata.inferredCategory = "Caf\xE9 & Brunch";
-      metadata.inferredCategories = ["Caf\xE9", "Brunch", "P\xE2tisserie"];
-    }
-  } catch {
+  const origin = new URL(cleanUrl).origin;
+  const mainPage = await parsePageContent(cleanUrl, false);
+  const dataSources = ["homepage"];
+  const prioritySubpages = [];
+  const menuLinks = mainPage.internalLinks.filter((l) => {
+    const low = l.toLowerCase();
+    return low.includes("menu") || low.includes("carte") || low.includes("notre-carte") || low.includes("la-carte") || low.includes("plats") || low.includes("food");
+  });
+  const contactLinks = mainPage.internalLinks.filter((l) => {
+    const low = l.toLowerCase();
+    return low.includes("contact") || low.includes("acces") || low.includes("venir") || low.includes("adresse") || low.includes("location");
+  });
+  const aboutLinks = mainPage.internalLinks.filter((l) => {
+    const low = l.toLowerCase();
+    return low.includes("a-propos") || low.includes("about") || low.includes("restaurant") || low.includes("infos");
+  });
+  menuLinks.slice(0, 3).forEach((l) => {
+    if (!prioritySubpages.includes(l)) prioritySubpages.push(l);
+  });
+  contactLinks.slice(0, 2).forEach((l) => {
+    if (!prioritySubpages.includes(l)) prioritySubpages.push(l);
+  });
+  aboutLinks.slice(0, 2).forEach((l) => {
+    if (!prioritySubpages.includes(l)) prioritySubpages.push(l);
+  });
+  if (prioritySubpages.length === 0 && mainPage.dishes.length === 0) {
+    prioritySubpages.push(`${origin}/menu`, `${origin}/carte`, `${origin}/contact`);
   }
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 12e3);
-    const response = await fetch(cleanUrl, {
-      signal: controller.signal,
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-        "Accept-Language": "fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7",
-        "Cache-Control": "no-cache"
-      },
-      redirect: "follow"
-    });
-    clearTimeout(timeoutId);
-    let html = "";
-    if (response.ok) {
-      html = await response.text();
-    } else {
-      try {
-        const mobCtrl = new AbortController();
-        const mobTimer = setTimeout(() => mobCtrl.abort(), 6e3);
-        const mobRes = await fetch(cleanUrl, {
-          signal: mobCtrl.signal,
-          headers: {
-            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4.1 Mobile/15E148 Safari/604.1",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language": "fr-FR,fr;q=0.9,en-US;q=0.8"
-          },
-          redirect: "follow"
-        });
-        clearTimeout(mobTimer);
-        if (mobRes.ok) {
-          html = await mobRes.text();
-        } else {
-          metadata.fetchError = `HTTP ${response.status}`;
+  const subpagesToFetch = Array.from(new Set(prioritySubpages)).slice(0, 8);
+  if (subpagesToFetch.length > 0) {
+    console.log(`[Crawler SAME-DOMAIN] Exploring ${subpagesToFetch.length} internal pages for ${cleanUrl}:`, subpagesToFetch);
+    const batch1 = subpagesToFetch.slice(0, 4);
+    const batch2 = subpagesToFetch.slice(4, 8);
+    const batchResults1 = await Promise.allSettled(batch1.map((u) => parsePageContent(u, true)));
+    const batchResults2 = batch2.length > 0 ? await Promise.allSettled(batch2.map((u) => parsePageContent(u, true))) : [];
+    const allSubResults = [...batchResults1, ...batchResults2];
+    for (const res of allSubResults) {
+      if (res.status === "fulfilled" && res.value) {
+        const sub = res.value;
+        const pathLabel = sub.url.replace(origin, "") || "/subpage";
+        if (!dataSources.includes(pathLabel)) dataSources.push(pathLabel);
+        for (const d of sub.dishes) {
+          const already = mainPage.dishes.some((ex) => ex.name.toLowerCase() === d.name.toLowerCase());
+          if (!already) mainPage.dishes.push(d);
         }
-      } catch {
-        metadata.fetchError = `HTTP ${response.status}`;
+        for (const pdf of sub.pdfLinks) {
+          if (!mainPage.pdfLinks.includes(pdf)) mainPage.pdfLinks.push(pdf);
+        }
+        if (!mainPage.phoneHint && sub.phoneHint) mainPage.phoneHint = sub.phoneHint;
+        if (!mainPage.emailHint && sub.emailHint) mainPage.emailHint = sub.emailHint;
+        if (!mainPage.addressHint && sub.addressHint) mainPage.addressHint = sub.addressHint;
+        if (!mainPage.postalCodeHint && sub.postalCodeHint) mainPage.postalCodeHint = sub.postalCodeHint;
+        if (!mainPage.cityHint && sub.cityHint) mainPage.cityHint = sub.cityHint;
+        if (!mainPage.geo && sub.geo) mainPage.geo = sub.geo;
+        if (!mainPage.logoUrl && sub.logoUrl) mainPage.logoUrl = sub.logoUrl;
+        if (!mainPage.openingHoursHint && sub.openingHoursHint) mainPage.openingHoursHint = sub.openingHoursHint;
+        for (const img of sub.photos) {
+          if (!mainPage.photos.includes(img) && mainPage.photos.length < 20) {
+            mainPage.photos.push(img);
+          }
+        }
       }
     }
-    metadata.html = html;
+  }
+  const pdfToFetch = mainPage.pdfLinks.slice(0, 2);
+  for (const pdfUrl of pdfToFetch) {
+    try {
+      console.log(`[Crawler PDF] Downloading & parsing PDF menu from: ${pdfUrl}`);
+      const pdfRes = await fetch(pdfUrl, {
+        signal: AbortSignal.timeout(4500),
+        headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/124.0.0.0 Safari/537.36" }
+      });
+      if (pdfRes.ok) {
+        const arrayBuf = await pdfRes.arrayBuffer();
+        const pdfDishes = await parsePdfMenu(Buffer.from(arrayBuf), origin);
+        console.log(`[Crawler PDF] Extracted ${pdfDishes.length} dishes from PDF: ${pdfUrl}`);
+        if (pdfDishes.length > 0) {
+          dataSources.push(pdfUrl.replace(origin, "") || "menu.pdf");
+          for (const pd of pdfDishes) {
+            const already = mainPage.dishes.some((ex) => ex.name.toLowerCase() === pd.name.toLowerCase());
+            if (!already) mainPage.dishes.push(pd);
+          }
+        }
+      }
+    } catch (pdfErr) {
+      console.warn(`[Crawler PDF] Failed to fetch or parse PDF ${pdfUrl}:`, pdfErr);
+    }
+  }
+  if (!mainPage.bannerUrl && mainPage.photos.length > 0) {
+    mainPage.bannerUrl = mainPage.photos[0];
+  }
+  if (!mainPage.cleanName) {
     try {
       const u = new URL(cleanUrl);
       const hostParts = u.hostname.replace(/^www\./, "").split(".");
-      const domainSlug = hostParts[0] || "";
-      const pathSlug = u.pathname.split("/").filter(Boolean).pop() || "";
-      const chosenSlug = pathSlug && pathSlug.length > 3 && !["fr", "en", "menu", "carte", "contact", "home"].includes(pathSlug.toLowerCase()) ? pathSlug : domainSlug;
-      metadata.cleanName = chosenSlug.replace(/[-_]+/g, " ").replace(/([a-z])([A-Z])/g, "$1 $2").replace(/(pizzeria|burger|burgers|sushi|sushis|ramen|cafe|café|bistrot|bistro|restaurant|trattoria|tacos|brunch|bakery|bar)/gi, " $1").replace(/\s+/g, " ").replace(/\b\w/g, (l) => l.toUpperCase()).trim();
+      mainPage.cleanName = hostParts[0].replace(/[-_]+/g, " ").replace(/\b\w/g, (l) => l.toUpperCase()).trim();
     } catch {
     }
-    if (html) {
-      const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-      if (titleMatch && titleMatch[1]) {
-        metadata.title = titleMatch[1].replace(/\s+/g, " ").trim();
-      }
-      const metaDescMatch = html.match(/<meta[^>]+name=["'](?:description|twitter:description)["'][^>]+content=["']([\s\S]*?)["']/i) || html.match(/<meta[^>]+content=["']([\s\S]*?)["'][^>]+name=["'](?:description|twitter:description)["']/i);
-      if (metaDescMatch && metaDescMatch[1]) {
-        metadata.description = metaDescMatch[1].replace(/\s+/g, " ").trim();
-      }
-      const ogTitleMatch = html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([\s\S]*?)["']/i);
-      if (ogTitleMatch && ogTitleMatch[1]) metadata.title = metadata.title || ogTitleMatch[1].trim();
-      const ogDescMatch = html.match(/<meta[^>]+property=["']og:description["'][^>]+content=["']([\s\S]*?)["']/i);
-      if (ogDescMatch && ogDescMatch[1]) metadata.description = metadata.description || ogDescMatch[1].trim();
-      const ogSiteNameMatch = html.match(/<meta[^>]+property=["']og:site_name["'][^>]+content=["']([\s\S]*?)["']/i);
-      if (ogSiteNameMatch && ogSiteNameMatch[1]) metadata.siteName = ogSiteNameMatch[1].trim();
-      const rawNameToClean = metadata.siteName || metadata.title || "";
-      if (rawNameToClean) {
-        const parsedClean = rawNameToClean.split(/[-|—•–]/)[0].replace(/^(Accueil|Home|Bienvenue chez|Restaurant|Le restaurant)\s+/i, "").trim();
-        if (parsedClean.length >= 2) {
-          metadata.cleanName = parsedClean;
-        }
-      }
-    }
-    const ogImageMatches = html.matchAll(/<meta[^>]+property=["'](?:og:image|og:image:url|og:image:secure_url|twitter:image)["'][^>]+content=["']([^"']+)["']/gi);
-    for (const match of ogImageMatches) {
-      if (match[1] && (match[1].startsWith("http") || match[1].startsWith("//"))) {
-        const imgUrl = match[1].startsWith("//") ? "https:" + match[1] : match[1];
-        if (!metadata.ogImages.includes(imgUrl)) metadata.ogImages.push(imgUrl);
-      }
-    }
-    const appleIconMatch = html.match(/<link[^>]+rel=["']apple-touch-icon["'][^>]+href=["']([^"']+)["']/i) || html.match(/<link[^>]+rel=["'](?:shortcut )?icon["'][^>]+href=["']([^"']+)["']/i);
-    if (appleIconMatch && appleIconMatch[1]) {
-      let iconUrl = appleIconMatch[1];
-      if (iconUrl.startsWith("//")) iconUrl = "https:" + iconUrl;
-      else if (iconUrl.startsWith("/")) {
-        try {
-          const u = new URL(cleanUrl);
-          iconUrl = `${u.origin}${iconUrl}`;
-        } catch {
-        }
-      }
-      if (iconUrl.startsWith("http")) {
-        metadata.logoUrl = iconUrl;
-      }
-    }
-    const jsonLdMatches = html.matchAll(/<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi);
-    for (const jMatch of jsonLdMatches) {
-      try {
-        const parsed = JSON.parse(jMatch[1].trim());
-        const schemas = Array.isArray(parsed) ? parsed : parsed["@graph"] || [parsed];
-        for (const s of schemas) {
-          metadata.jsonLd.push(s);
-          if (s.name && !metadata.siteName) metadata.siteName = String(s.name);
-          if (s.telephone && !metadata.phoneHint) metadata.phoneHint = String(s.telephone);
-          if (s.email && !metadata.emailHint) metadata.emailHint = String(s.email);
-          if (s.logo) {
-            const lUrl = typeof s.logo === "string" ? s.logo : s.logo.url || s.logo.contentUrl;
-            if (lUrl && typeof lUrl === "string") metadata.logoUrl = lUrl;
-          }
-          if (s.image) {
-            const iUrls = Array.isArray(s.image) ? s.image : [s.image];
-            for (const iu of iUrls) {
-              const finalImg = typeof iu === "string" ? iu : iu?.url || iu?.contentUrl;
-              if (finalImg && typeof finalImg === "string" && !metadata.heroImages.includes(finalImg)) {
-                metadata.heroImages.push(finalImg);
-              }
-            }
-          }
-          if (s.address) {
-            if (typeof s.address === "string") {
-              metadata.addressHint = s.address;
-            } else if (typeof s.address === "object") {
-              const addr = [s.address.streetAddress, s.address.postalCode, s.address.addressLocality, s.address.addressCountry].filter(Boolean).join(", ");
-              if (addr) metadata.addressHint = addr;
-            }
-          }
-          if (s.geo && typeof s.geo === "object") {
-            const lat = parseFloat(s.geo.latitude);
-            const lng = parseFloat(s.geo.longitude);
-            if (!isNaN(lat) && !isNaN(lng)) {
-              metadata.geo = { lat, lng };
-            }
-          }
-          const menuRaw = s.hasMenu || s.menu;
-          if (menuRaw) {
-            const menuSections = Array.isArray(menuRaw) ? menuRaw : [menuRaw];
-            for (const mSec of menuSections) {
-              const items = mSec.hasMenuItem || mSec.itemListElement || (mSec["@type"] === "MenuItem" ? [mSec] : []);
-              if (Array.isArray(items)) {
-                for (const mi of items) {
-                  if (mi && mi.name) {
-                    const p = mi.offers?.price || mi.price;
-                    const priceNum = typeof p === "number" ? p : parseFloat(String(p).replace(",", "."));
-                    const dImg = typeof mi.image === "string" ? mi.image : mi.image?.url || "";
-                    metadata.dishes.push({
-                      name: String(mi.name).trim(),
-                      description: mi.description ? String(mi.description).trim() : "",
-                      price: !isNaN(priceNum) && priceNum > 0 ? priceNum : 14.5,
-                      category: mi.category || "Plat",
-                      imageUrl: dImg
-                    });
-                  }
-                }
-              }
-            }
-          }
-        }
-      } catch {
-      }
-    }
-    const imgMatches = html.matchAll(/<img[^>]+src=["']([^"']+)["'][^>]*>/gi);
-    for (const iMatch of imgMatches) {
-      let src = iMatch[1];
-      if (src && !src.includes("data:image") && !src.includes("pixel") && !src.includes("tracker") && !src.includes("1x1")) {
-        if (src.startsWith("//")) src = "https:" + src;
-        else if (src.startsWith("/")) {
-          try {
-            const u = new URL(cleanUrl);
-            src = `${u.origin}${src}`;
-          } catch {
-          }
-        }
-        if (src.startsWith("http") && !metadata.heroImages.includes(src)) {
-          if ((src.includes("logo") || iMatch[0].toLowerCase().includes('alt="logo')) && !metadata.logoUrl) {
-            metadata.logoUrl = src;
-          } else if (src.includes(".jpg") || src.includes(".jpeg") || src.includes(".png") || src.includes(".webp") || src.includes("unsplash") || src.includes("cloudinary")) {
-            metadata.heroImages.push(src);
-            if (metadata.heroImages.length >= 10) break;
-          }
-        }
-      }
-    }
-    metadata.bannerUrl = metadata.ogImages[0] || metadata.heroImages[0] || "";
-    const mailtoMatch = html.match(/href=["']mailto:([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})["']/i);
-    if (mailtoMatch && mailtoMatch[1] && !metadata.emailHint) {
-      metadata.emailHint = mailtoMatch[1].trim();
-    }
-    const telMatch = html.match(/href=["']tel:([^"'\s?]+)["']/i);
-    if (telMatch && telMatch[1] && !metadata.phoneHint) {
-      metadata.phoneHint = telMatch[1].trim();
-    }
-    const cleanText = html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, " ").replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, " ").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
-    metadata.extractedBodyText = cleanText.substring(0, 3500);
-    if (!metadata.emailHint) {
-      const emailRegexMatch = cleanText.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
-      if (emailRegexMatch) metadata.emailHint = emailRegexMatch[0];
-    }
-    if (!metadata.phoneHint) {
-      const phoneMatch = cleanText.match(/(?:\+33|0)[1-9](?:[\s.-]?\d{2}){4}/);
-      if (phoneMatch) metadata.phoneHint = phoneMatch[0];
-    }
-    if (!metadata.addressHint) {
-      const addressMatch = cleanText.match(/\d+[\s\w,.-]+(?:Rue|Avenue|Boulevard|Place|Allée|Quai|Chemin|Passage|Cours|Route)[\s\w,.-]+(?:\d{5})?[\s\w,.-]+/i);
-      if (addressMatch) metadata.addressHint = addressMatch[0].trim();
-    }
-    if (metadata.dishes.length < 3) {
-      const priceRegex = /(\d{1,3}(?:[.,]\d{1,2})?)\s*(?:€|EUR)/gi;
-      const itemRegex = /<(?:div|li|article|tr)[^>]*class=["']([^"']*(?:dish|item|product|plat|card|menu|entry|tarifs|prix)[^"']*)["'][^>]*>([\s\S]*?)<\/(?:div|li|article|tr)>/gi;
-      let match;
-      const seenDishNames = /* @__PURE__ */ new Set();
-      while ((match = itemRegex.exec(html)) !== null && metadata.dishes.length < 8) {
-        const block = match[2];
-        const priceM = block.match(priceRegex);
-        if (!priceM) continue;
-        const titleM = block.match(/<(?:h[1-6]|strong|b|span|p)[^>]*class=["'][^"']*(?:title|name|nom|dish)[^"']*["'][^>]*>([\s\S]*?)<\/(?:h[1-6]|strong|b|span|p)>/i) || block.match(/<(?:h[2-5]|strong)>([\s\S]*?)<\/(?:h[2-5]|strong)>/i);
-        if (!titleM) continue;
-        const dName = titleM[1].replace(/<[^>]+>/g, "").trim();
-        if (!dName || dName.length < 3 || dName.length > 60 || seenDishNames.has(dName.toLowerCase())) continue;
-        seenDishNames.add(dName.toLowerCase());
-        const rawPrice = priceM[0].replace(/[^\d.,]/g, "").replace(",", ".");
-        const pVal = parseFloat(rawPrice);
-        if (isNaN(pVal) || pVal <= 0 || pVal > 250) continue;
-        const descM = block.match(/<(?:p|span)[^>]*class=["'][^"']*(?:desc|detail|ingredients|composition)[^"']*["'][^>]*>([\s\S]*?)<\/(?:p|span)>/i) || block.match(/<p[^>]*>([\s\S]*?)<\/p>/i);
-        const dDesc = descM ? descM[1].replace(/<[^>]+>/g, "").trim() : "";
-        const imgM = block.match(/<img[^>]+src=["']([^"']+)["']/i);
-        let dImg = imgM ? imgM[1] : "";
-        if (dImg && dImg.startsWith("/")) {
-          try {
-            const u = new URL(cleanUrl);
-            dImg = `${u.origin}${dImg}`;
-          } catch {
-          }
-        }
-        metadata.dishes.push({
-          name: dName,
-          description: dDesc,
-          price: pVal,
-          category: "Plat",
-          imageUrl: dImg.startsWith("http") ? dImg : void 0
-        });
-      }
-    }
-    const fullTextLower = `${metadata.title} ${metadata.description} ${cleanText.slice(0, 1e3)}`.toLowerCase();
-    if (fullTextLower.includes("pizz") || fullTextLower.includes("ital")) {
-      metadata.inferredCategory = "Italien";
-      metadata.inferredCategories = ["Italien", "Pizze", "P\xE2tes"];
-    } else if (fullTextLower.includes("boulang") || fullTextLower.includes("p\xE2tiss") || fullTextLower.includes("croissant") || fullTextLower.includes("boulangerie")) {
-      metadata.inferredCategory = "Boulangerie & P\xE2tisserie";
-      metadata.inferredCategories = ["Boulangerie", "P\xE2tisserie", "Viennoiserie"];
-    } else if (fullTextLower.includes("burg") || fullTextLower.includes("smash") || fullTextLower.includes("frite")) {
-      metadata.inferredCategory = "Burgers";
-      metadata.inferredCategories = ["Burgers", "Street Food", "Frites Maison"];
-    } else if (fullTextLower.includes("sushi") || fullTextLower.includes("ramen") || fullTextLower.includes("japon")) {
-      metadata.inferredCategory = "Japonais";
-      metadata.inferredCategories = ["Japonais", "Sushis", "Ramen"];
-    } else if (fullTextLower.includes("mexic") || fullTextLower.includes("taco") || fullTextLower.includes("burrito")) {
-      metadata.inferredCategory = "Mexicain";
-      metadata.inferredCategories = ["Mexicain", "Tacos", "Street Food"];
-    } else if (fullTextLower.includes("bistrot") || fullTextLower.includes("terroir") || fullTextLower.includes("brasserie") || fullTextLower.includes("bistronomie")) {
-      metadata.inferredCategory = "Bistronomie Fran\xE7aise";
-      metadata.inferredCategories = ["Fran\xE7ais", "Bistronomie", "Produits du Terroir"];
-    } else if (fullTextLower.includes("caf\xE9") || fullTextLower.includes("coffee") || fullTextLower.includes("brunch")) {
-      metadata.inferredCategory = "Caf\xE9 & Brunch";
-      metadata.inferredCategories = ["Caf\xE9", "Brunch", "P\xE2tisserie"];
-    } else {
-      metadata.inferredCategory = "Gastronomie";
-      metadata.inferredCategories = ["Cuisine du Monde", "Fait Maison"];
-    }
-  } catch (fetchErr) {
-    metadata.fetchError = fetchErr.message || "\xC9chec de connexion au site";
   }
-  return metadata;
-}
-function calculateGeoCoordinates(address, city = "Paris") {
-  const lower = (address + " " + city).toLowerCase();
-  if (lower.includes("75001") || lower.includes(" 1er") || lower.includes("louvre") || lower.includes("palais-royal") || lower.includes("chatelet")) {
-    return { lat: 48.8625, lng: 2.3364, district: "Paris 1er - Louvre / Palais-Royal" };
-  }
-  if (lower.includes("75002") || lower.includes(" 2e") || lower.includes("bourse") || lower.includes("sentier") || lower.includes("opera") || lower.includes("op\xE9ra")) {
-    return { lat: 48.8686, lng: 2.3412, district: "Paris 2e - Bourse / Sentier" };
-  }
-  if (lower.includes("75003") || lower.includes(" 3e") || lower.includes("temple") || lower.includes("haut-marais")) {
-    return { lat: 48.8631, lng: 2.3601, district: "Paris 3e - Haut-Marais / Temple" };
-  }
-  if (lower.includes("75004") || lower.includes(" 4e") || lower.includes("marais") || lower.includes("vosges") || lower.includes("saint-paul") || lower.includes("notre-dame")) {
-    return { lat: 48.855, lng: 2.3588, district: "Paris 4e - Le Marais / \xCEle Saint-Louis" };
-  }
-  if (lower.includes("75005") || lower.includes(" 5e") || lower.includes("latin") || lower.includes("pantheon") || lower.includes("panth\xE9on") || lower.includes("mouffetard")) {
-    return { lat: 48.8449, lng: 2.347, district: "Paris 5e - Quartier Latin / Mouffetard" };
-  }
-  if (lower.includes("75006") || lower.includes(" 6e") || lower.includes("germain") || lower.includes("odeon") || lower.includes("od\xE9on") || lower.includes("luxembourg")) {
-    return { lat: 48.8519, lng: 2.3323, district: "Paris 6e - Saint-Germain-des-Pr\xE9s" };
-  }
-  if (lower.includes("75007") || lower.includes(" 7e") || lower.includes("eiffel") || lower.includes("invalides") || lower.includes("bourbon") || lower.includes("bac")) {
-    return { lat: 48.8566, lng: 2.3122, district: "Paris 7e - Tour Eiffel / Invalides" };
-  }
-  if (lower.includes("75008") || lower.includes(" 8e") || lower.includes("champs") || lower.includes("elysees") || lower.includes("\xE9lys\xE9es") || lower.includes("madeleine") || lower.includes("saint-honor\xE9") || lower.includes("saint-honore")) {
-    return { lat: 48.8722, lng: 2.3126, district: "Paris 8e - Champs-\xC9lys\xE9es / Madeleine" };
-  }
-  if (lower.includes("75009") || lower.includes(" 9e") || lower.includes("pigalle") || lower.includes("martyrs") || lower.includes("haussmann") || lower.includes("garnier")) {
-    return { lat: 48.877, lng: 2.337, district: "Paris 9e - South Pigalle / Martyrs" };
-  }
-  if (lower.includes("75010") || lower.includes(" 10e") || lower.includes("canal") || lower.includes("martin") || lower.includes("republique") || lower.includes("r\xE9publique") || lower.includes("gare du nord")) {
-    return { lat: 48.876, lng: 2.361, district: "Paris 10e - Canal Saint-Martin / R\xE9publique" };
-  }
-  if (lower.includes("75011") || lower.includes(" 11e") || lower.includes("bastille") || lower.includes("oberkampf") || lower.includes("charonne") || lower.includes("roquette")) {
-    return { lat: 48.857, lng: 2.378, district: "Paris 11e - Bastille / Oberkampf" };
-  }
-  if (lower.includes("75012") || lower.includes(" 12e") || lower.includes("bercy") || lower.includes("gare de lyon") || lower.includes("aligre") || lower.includes("daumesnil")) {
-    return { lat: 48.8412, lng: 2.3876, district: "Paris 12e - Bercy / Aligre" };
-  }
-  if (lower.includes("75013") || lower.includes(" 13e") || lower.includes("italie") || lower.includes("butte-aux-cailles") || lower.includes("bibliotheque") || lower.includes("tolbiac")) {
-    return { lat: 48.8283, lng: 2.3622, district: "Paris 13e - Butte-aux-Cailles / Italie" };
-  }
-  if (lower.includes("75014") || lower.includes(" 14e") || lower.includes("montparnasse") || lower.includes("denfert") || lower.includes("alesia") || lower.includes("al\xE9sia")) {
-    return { lat: 48.8331, lng: 2.327, district: "Paris 14e - Montparnasse / Denfert" };
-  }
-  if (lower.includes("75015") || lower.includes(" 15e") || lower.includes("convention") || lower.includes("grenelle") || lower.includes("commerce") || lower.includes("pasteur")) {
-    return { lat: 48.8415, lng: 2.298, district: "Paris 15e - Grenelle / Convention" };
-  }
-  if (lower.includes("75016") || lower.includes(" 16e") || lower.includes("passy") || lower.includes("trocadero") || lower.includes("trocad\xE9ro") || lower.includes("auteuil") || lower.includes("victor hugo")) {
-    return { lat: 48.8637, lng: 2.2769, district: "Paris 16e - Passy / Victor Hugo" };
-  }
-  if (lower.includes("75017") || lower.includes(" 17e") || lower.includes("batignolles") || lower.includes("monceau") || lower.includes("ternes") || lower.includes("villiers")) {
-    return { lat: 48.887, lng: 2.317, district: "Paris 17e - Batignolles / Monceau" };
-  }
-  if (lower.includes("75018") || lower.includes(" 18e") || lower.includes("montmartre") || lower.includes("abesses") || lower.includes("abbesses") || lower.includes("sacr\xE9-c\u0153ur") || lower.includes("lamarck")) {
-    return { lat: 48.8867, lng: 2.3431, district: "Paris 18e - Montmartre Sacr\xE9-C\u0153ur" };
-  }
-  if (lower.includes("75019") || lower.includes(" 19e") || lower.includes("villette") || lower.includes("buttes-chaumont") || lower.includes("ourcq") || lower.includes("pantheon")) {
-    return { lat: 48.8828, lng: 2.382, district: "Paris 19e - Buttes-Chaumont / Villette" };
-  }
-  if (lower.includes("75020") || lower.includes(" 20e") || lower.includes("belleville") || lower.includes("menilmontant") || lower.includes("m\xE9nilmontant") || lower.includes("gambetta") || lower.includes("pere lachaise")) {
-    return { lat: 48.863, lng: 2.3985, district: "Paris 20e - Belleville / M\xE9nilmontant" };
-  }
-  if (lower.includes("neuilly") || lower.includes("92200")) return { lat: 48.8847, lng: 2.2694, district: "Neuilly-sur-Seine" };
-  if (lower.includes("boulogne") || lower.includes("92100")) return { lat: 48.8397, lng: 2.2399, district: "Boulogne-Billancourt" };
-  if (lower.includes("levallois") || lower.includes("92300")) return { lat: 48.8932, lng: 2.2878, district: "Levallois-Perret" };
-  if (lower.includes("issy") || lower.includes("92130")) return { lat: 48.824, lng: 2.273, district: "Issy-les-Moulineaux" };
-  if (lower.includes("courbevoie") || lower.includes("la defense") || lower.includes("la d\xE9fense") || lower.includes("92400")) return { lat: 48.8973, lng: 2.253, district: "Courbevoie - La D\xE9fense" };
-  if (lower.includes("vincennes") || lower.includes("94300")) return { lat: 48.8473, lng: 2.439, district: "Vincennes" };
-  if (lower.includes("montreuil") || lower.includes("93100")) return { lat: 48.8638, lng: 2.443, district: "Montreuil" };
-  if (lower.includes("saint-denis") || lower.includes("93200")) return { lat: 48.9362, lng: 2.3574, district: "Saint-Denis Stade" };
-  if (lower.includes("versailles") || lower.includes("78000")) return { lat: 48.8049, lng: 2.1204, district: "Versailles" };
-  if (lower.includes("lyon") || lower.includes("6900")) return { lat: 45.764, lng: 4.8357, district: "Lyon - Presqu'\xEEle / Vieux-Lyon" };
-  if (lower.includes("marseille") || lower.includes("1300")) return { lat: 43.2965, lng: 5.3698, district: "Marseille - Vieux-Port" };
-  if (lower.includes("bordeaux") || lower.includes("33000")) return { lat: 44.8378, lng: -0.5792, district: "Bordeaux - Triangle d'Or" };
-  if (lower.includes("lille") || lower.includes("59000")) return { lat: 50.6292, lng: 3.0573, district: "Lille - Vieux-Lille" };
-  if (lower.includes("toulouse") || lower.includes("31000")) return { lat: 43.6047, lng: 1.4442, district: "Toulouse - Capitole" };
-  if (lower.includes("nice") || lower.includes("06000")) return { lat: 43.7102, lng: 7.262, district: "Nice - Promenade des Anglais" };
-  if (lower.includes("nantes") || lower.includes("44000")) return { lat: 47.2184, lng: -1.5536, district: "Nantes - Centre Historique" };
-  if (lower.includes("strasbourg") || lower.includes("67000")) return { lat: 48.5734, lng: 7.7521, district: "Strasbourg - Grande \xCEle" };
-  if (lower.includes("montpellier") || lower.includes("34000")) return { lat: 43.6108, lng: 3.8767, district: "Montpellier - \xC9cusson" };
-  if (lower.includes("rennes") || lower.includes("35000")) return { lat: 48.1173, lng: -1.6778, district: "Rennes - Centre" };
-  if (lower.includes("cannes") || lower.includes("06400")) return { lat: 43.5528, lng: 7.0174, district: "Cannes - La Croisette" };
-  if (lower.includes("monaco") || lower.includes("98000")) return { lat: 43.7384, lng: 7.4246, district: "Monaco - Monte-Carlo" };
-  if (lower.includes("aix") || lower.includes("13100")) return { lat: 43.5297, lng: 5.4474, district: "Aix-en-Provence - Mirabeau" };
-  if (lower.includes("rouen") || lower.includes("76000")) return { lat: 49.4432, lng: 1.0999, district: "Rouen - Vieux March\xE9" };
-  if (lower.includes("madrid")) return { lat: 40.4168, lng: -3.7038, district: "Madrid - Gran V\xEDa" };
-  if (lower.includes("barcelona")) return { lat: 41.3874, lng: 2.1686, district: "Barcelona - Eixample" };
-  if (lower.includes("london")) return { lat: 51.5074, lng: -0.1278, district: "London - Soho / Covent Garden" };
-  if (lower.includes("bruxelles") || lower.includes("brussels")) return { lat: 50.8503, lng: 4.3517, district: "Bruxelles - Grand-Place" };
-  if (lower.includes("geneve") || lower.includes("geneva")) return { lat: 46.2044, lng: 6.1432, district: "Gen\xE8ve - Rive" };
-  if (lower.includes("rome") || lower.includes("roma")) return { lat: 41.9028, lng: 12.4964, district: "Rome - Centro Storico" };
-  if (lower.includes("milan") || lower.includes("milano")) return { lat: 45.4642, lng: 9.19, district: "Milan - Duomo / Brera" };
-  const offsetLat = Math.random() * 0.02 - 0.01;
-  const offsetLng = Math.random() * 0.02 - 0.01;
   return {
-    lat: Number((48.8566 + offsetLat).toFixed(6)),
-    lng: Number((2.3522 + offsetLng).toFixed(6)),
-    district: "Paris - Secteur Gastronomique Central"
+    ...mainPage,
+    dataSources
   };
 }
 async function extractSingleRestaurantCore(rawUrl) {
@@ -7373,9 +7553,17 @@ async function extractSingleRestaurantCore(rawUrl) {
   const url = scraped.url || rawUrl;
   let extractedData = null;
   const prompt = `You are the Lead Culinary AI Data Extractor for "Fidfud", a premier geolocated video-first food delivery and restaurant discovery app.
-Your task is to analyze the provided scraped website metadata and construct a truthful, high-fidelity restaurant profile.
-CRITICAL MANDATE: You must be 100% FAITHFUL to the provided scraped data. DO NOT INVENT fake restaurants or fake dishes if they are on the website.
-If dishes are provided in the scraped dishes list, use them directly with their exact names, descriptions, and prices.
+Your task is to analyze the provided scraped website metadata and construct a truthful, authentic restaurant profile.
+CRITICAL MANDATE:
+1. NEVER INVENT fake restaurants, fake dishes, fake phone numbers, fake emails, or fake addresses.
+2. STRICT PRINCIPLE: REAL DATA OR NULL.
+   - If dishes were found on the website, include them with their exact real names and prices.
+   - If no dishes were found on the website, return an EMPTY array for "dishes": [].
+   - If no phone number was found on the website, return null for "phone".
+   - If no email was found on the website, return null for "email".
+   - If no street address was found on the website, return null for "address".
+   - If no logo image was found on the website, return null for "logoUrl".
+   - If no hero/banner image was found on the website, return null for "bannerUrl".
 
 --- SCRAPED DATA ---
 Target URL: "${url}"
@@ -7383,43 +7571,41 @@ Website Title: "${scraped.title || "N/A"}"
 Brand Name: "${scraped.cleanName || scraped.siteName || "N/A"}"
 Website Description: "${scraped.description || "N/A"}"
 Website SiteName: "${scraped.siteName || "N/A"}"
-Scraped Images found on page: ${JSON.stringify(scraped.ogImages.concat(scraped.heroImages).slice(0, 8))}
+Logo candidate: "${scraped.logoUrl || "null"}"
+Banner candidate: "${scraped.bannerUrl || "null"}"
+Photos found on website: ${JSON.stringify(scraped.photos.slice(0, 10))}
 Address hint: "${scraped.addressHint || "N/A"}"
+Postal Code hint: "${scraped.postalCodeHint || "N/A"}"
+City hint: "${scraped.cityHint || "N/A"}"
 Phone hint: "${scraped.phoneHint || "N/A"}"
 Email hint: "${scraped.emailHint || "N/A"}"
-Scraped Dishes list: ${JSON.stringify(scraped.dishes)}
-Scraped Body Text Extract: "${scraped.extractedBodyText.substring(0, 2e3)}"
+Opening Hours hint: ${JSON.stringify(scraped.openingHoursHint || null)}
+Dishes extracted from DOM/PDF/JSON-LD: ${JSON.stringify(scraped.dishes)}
+Body text preview: "${scraped.extractedBodyText.substring(0, 2500)}"
 
 Return a valid JSON object matching:
 {
-  "name": "Full official restaurant name",
+  "name": "Exact official restaurant name",
   "shortName": "Short brand name",
-  "address": "Full geocodable street address with postal code and city (from scraped address if available)",
-  "slogan": "Appetizing slogan in French based on the actual restaurant identity",
-  "description": "Truthful culinary description in French detailing specialties based on scraped text",
-  "category": "${scraped.inferredCategory}",
-  "categories": ${JSON.stringify(scraped.inferredCategories)},
-  "logoUrl": "${scraped.logoUrl || scraped.ogImages[0] || ""}",
-  "bannerUrl": "${scraped.bannerUrl || scraped.heroImages[0] || ""}",
-  "email": "${scraped.emailHint || ""}",
-  "phone": "${scraped.phoneHint || ""}",
-  "rating": 4.9,
-  "reviewCount": 94,
-  "dispositionShop": "Nom de la ville ou du quartier r\xE9el",
-  "isCertified": true,
-  "subscriptionTier": "pro",
+  "address": "Real street address or null if not found",
+  "postalCode": "Postal code or null",
+  "city": "City or null",
+  "slogan": "Appetizing French tagline based only on actual cuisine identity",
+  "description": "Truthful culinary description in French based on website content",
+  "category": "Cuisine category (e.g. Italien, Japonais, Bistrot, Burgers, Caf\xE9 & Brunch, etc.)",
+  "categories": ["Category 1", "Category 2"],
+  "logoUrl": "Real logo URL found on site or null",
+  "bannerUrl": "Real banner/hero photo URL found on site or null",
+  "email": "Real email or null",
+  "phone": "Real phone number or null",
+  "openingHours": ["Lundi - Vendredi: ..."] or null,
   "dishes": [
     {
-      "name": "Nom du plat r\xE9el",
-      "description": "Description r\xE9elle",
+      "name": "Exact real dish name",
+      "description": "Real description",
       "price": 14.50,
       "category": "Plat",
-      "imageUrl": "URL de la photo r\xE9elle si disponible",
-      "prepTime": 15,
-      "calories": 600,
-      "allergens": [],
-      "dietary": ["Fait Maison"],
-      "isChefSpecial": true
+      "imageUrl": "Real photo URL if available or null"
     }
   ]
 }`;
@@ -7436,168 +7622,51 @@ Return a valid JSON object matching:
     }
   }
   if (!extractedData) {
-    const brand = scraped.cleanName || scraped.siteName || (scraped.title ? scraped.title.split(/[-|—•]/)[0].trim() : "Restaurant Gourmand");
-    const cat = scraped.inferredCategory || "Gastronomie";
-    const catLower2 = (cat + " " + (scraped.title || "") + " " + (scraped.description || "") + " " + url).toLowerCase();
-    let dishesToUse = scraped.dishes.length > 0 ? scraped.dishes : [];
-    if (dishesToUse.length === 0) {
-      if (catLower2.includes("pizz") || catLower2.includes("ital")) {
-        dishesToUse = [
-          {
-            name: `Pizza Margherita di Bufala D.O.P.`,
-            description: `Sauce tomate San Marzano, mozzarella di bufala campana cr\xE9meuse, basilic frais et filet d'huile d'olive extra vierge.`,
-            price: 14.5,
-            category: `Pizze Artigianali`,
-            imageUrl: scraped.heroImages[0] || `https://images.unsplash.com/photo-1604382354936-07c5d9983bd3?w=600&auto=format&fit=crop&q=80`
-          },
-          {
-            name: `Pizza Tartufo & Stracciatella`,
-            description: `Cr\xE8me de truffe noire d'Ombrie, stracciatella des Pouilles fondante, champignons saut\xE9s et parmesan affin\xE9 24 mois.`,
-            price: 19,
-            category: `Pizze Artigianali`,
-            imageUrl: scraped.heroImages[1] || `https://images.unsplash.com/photo-1513104890138-7c749659a591?w=600&auto=format&fit=crop&q=80`
-          },
-          {
-            name: `Burrata Cr\xE9meuse & Tomates Datterini`,
-            description: `Burrata fra\xEEche 250g, concass\xE9 de tomates datterini m\xFBries au soleil, pesto de pistache de Sicile et focaccia ti\xE8de.`,
-            price: 13.5,
-            category: `Antipasti`,
-            imageUrl: `https://images.unsplash.com/photo-1592417817098-8f3d6910985b?w=600&auto=format&fit=crop&q=80`
-          },
-          {
-            name: `Tiramis\xF9 Tradizionale Maison`,
-            description: `Biscuits savoiardi imbib\xE9s de caf\xE9 ristretto d'exception, mascarpone a\xE9rien et cacao amer d'\xC9quateur poudr\xE9 minute.`,
-            price: 8,
-            category: `Dolci`,
-            imageUrl: `https://images.unsplash.com/photo-1571877227200-a0d98ea607e9?w=600&auto=format&fit=crop&q=80`
-          }
-        ];
-      } else if (catLower2.includes("burg") || catLower2.includes("smash") || catLower2.includes("street")) {
-        dishesToUse = [
-          {
-            name: `Double Smash Burger Cheddar Vintage`,
-            description: `Deux steaks de b\u0153uf fran\xE7ais smash\xE9s minute et croustillants, cheddar matur\xE9 18 mois, oignons caram\xE9lis\xE9s et sauce secr\xE8te maison.`,
-            price: 15.5,
-            category: `Burgers Signatures`,
-            imageUrl: scraped.heroImages[0] || `https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=600&auto=format&fit=crop&q=80`
-          },
-          {
-            name: `Smoky BBQ Bacon Burger`,
-            description: `B\u0153uf Black Angus, bacon fum\xE9 croustillant au bois de h\xEAtre, compot\xE9e d'oignons doux et sauce barbecue fum\xE9e artisanale.`,
-            price: 16.5,
-            category: `Burgers Signatures`,
-            imageUrl: scraped.heroImages[1] || `https://images.unsplash.com/photo-1586190848861-99aa4a171e90?w=600&auto=format&fit=crop&q=80`
-          },
-          {
-            name: `Frites Fra\xEEches Maison au Romarin`,
-            description: `Pommes de terre Agria taill\xE9es chaque matin, double cuisson au gras v\xE9g\xE9tal croustillante et sel marin au romarin.`,
-            price: 4.5,
-            category: `Accompagnements`,
-            imageUrl: `https://images.unsplash.com/photo-1573080496219-bb080dd4f877?w=600&auto=format&fit=crop&q=80`
-          },
-          {
-            name: `Cookie Mi-Cuit Chocolat Fleur de Sel`,
-            description: `Gros cookie am\xE9ricain ti\xE8de au c\u0153ur coulant chocolat noir Valrhona et noisettes torr\xE9fi\xE9es.`,
-            price: 5.5,
-            category: `Desserts`,
-            imageUrl: `https://images.unsplash.com/photo-1499636136210-6f4ee915583e?w=600&auto=format&fit=crop&q=80`
-          }
-        ];
-      } else if (catLower2.includes("sush") || catLower2.includes("ramen") || catLower2.includes("japon") || catLower2.includes("asia")) {
-        dishesToUse = [
-          {
-            name: `Plateau Omakase Royal (18 pi\xE8ces)`,
-            description: `S\xE9lection premium du Ma\xEEtre Sushi : Nigiris saumon d'\xC9cosse, thon rouge label, rolls anguille grill\xE9e et tartare \xE9pic\xE9.`,
-            price: 24.5,
-            category: `Sushis & Rolls`,
-            imageUrl: scraped.heroImages[0] || `https://images.unsplash.com/photo-1579871494447-9811cf80d66c?w=600&auto=format&fit=crop&q=80`
-          },
-          {
-            name: `Ramen Tonkotsu Fumant Traditionnel`,
-            description: `Bouillon onctueux mijot\xE9 14h, nouilles fra\xEEches artisanales, chashu de porc fondant, \u0153uf ajitsuke marin\xE9 et bambou menma.`,
-            price: 16.5,
-            category: `Ramen & Plats Chauds`,
-            imageUrl: scraped.heroImages[1] || `https://images.unsplash.com/photo-1569718212165-3a8278d5f624?w=600&auto=format&fit=crop&q=80`
-          },
-          {
-            name: `Gyozas Grill\xE9s au Poulet Fermier (6 pi\xE8ces)`,
-            description: `Raviolis japonais maison croustillants sur la plaque, farce poulet fermier, chou chinois, gingembre et ciboule fra\xEEche.`,
-            price: 8.5,
-            category: `Entr\xE9es & Street Food`,
-            imageUrl: `https://images.unsplash.com/photo-1496116218417-1a781b1c416c?w=600&auto=format&fit=crop&q=80`
-          },
-          {
-            name: `Mochis Glac\xE9s Artisanaux Duo`,
-            description: `Duo de mochis glac\xE9s japonais : Th\xE9 matcha bio de Kyoto et mangue passion des \xEEles.`,
-            price: 6.5,
-            category: `Desserts`,
-            imageUrl: `https://images.unsplash.com/photo-1563805042-7684c019e1cb?w=600&auto=format&fit=crop&q=80`
-          }
-        ];
-      } else {
-        dishesToUse = [
-          {
-            name: `Plat Signature du Chef - ${brand}`,
-            description: scraped.description ? scraped.description.slice(0, 160) : `Cr\xE9ation bistronomique pr\xE9par\xE9e avec des produits de saison s\xE9lectionn\xE9s aupr\xE8s de producteurs passionn\xE9s.`,
-            price: 18.5,
-            category: `Plats Signatures`,
-            imageUrl: scraped.heroImages[0] || scraped.ogImages[0] || `https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=600&auto=format&fit=crop&q=80`
-          },
-          {
-            name: `Entr\xE9e Gourmande de Saison`,
-            description: `Assiette fra\xEEche et raffin\xE9e dress\xE9e minute avec herbes fra\xEEches et \xE9mulsion du moment.`,
-            price: 11.5,
-            category: `Entr\xE9es`,
-            imageUrl: scraped.heroImages[1] || `https://images.unsplash.com/photo-1540420773420-3366772f4999?w=600&auto=format&fit=crop&q=80`
-          },
-          {
-            name: `Douceur Sucr\xE9e Maison`,
-            description: `Dessert artisanal d'exception pr\xE9par\xE9 chaque matin par notre chef p\xE2tissier.`,
-            price: 7.5,
-            category: `Desserts`,
-            imageUrl: `https://images.unsplash.com/photo-1551024709-8f23befc6f87?w=600&auto=format&fit=crop&q=80`
-          }
-        ];
-      }
-    }
-    const fallbackLogo = scraped.logoUrl || scraped.ogImages[0] || (catLower2.includes("pizz") ? "https://images.unsplash.com/photo-1513104890138-7c749659a591?w=200&auto=format&fit=crop&q=80" : catLower2.includes("burg") ? "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=200&auto=format&fit=crop&q=80" : catLower2.includes("sush") ? "https://images.unsplash.com/photo-1579871494447-9811cf80d66c?w=200&auto=format&fit=crop&q=80" : "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=200&auto=format&fit=crop&q=80");
-    const fallbackBanner = scraped.bannerUrl || scraped.heroImages[0] || scraped.ogImages[1] || (catLower2.includes("pizz") ? "https://images.unsplash.com/photo-1590846406792-0adc7f938f1d?w=1200&auto=format&fit=crop&q=80" : catLower2.includes("burg") ? "https://images.unsplash.com/photo-1550547660-d9450f859349?w=1200&auto=format&fit=crop&q=80" : catLower2.includes("sush") ? "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=1200&auto=format&fit=crop&q=80" : "https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=1200&auto=format&fit=crop&q=80");
-    let resolvedAddress = scraped.addressHint;
-    if (!resolvedAddress) {
-      resolvedAddress = `15 Rue de la Gastronomie, 75001 Paris`;
-    }
-    let cleanDomain = "fidfud-partner.com";
-    try {
-      cleanDomain = new URL(url).hostname.replace(/^www\./, "");
-    } catch {
-    }
+    const brand = scraped.cleanName || scraped.siteName || (scraped.title ? scraped.title.split(/[-|—•]/)[0].trim() : "Restaurant");
     extractedData = {
       name: brand,
       shortName: brand.split(/[-|—]/)[0].trim(),
-      address: resolvedAddress,
-      slogan: scraped.description ? scraped.description.slice(0, 95) + " \u2728" : "L'art culinaire authentique et du fait maison \u2728",
-      description: scraped.description || scraped.extractedBodyText.slice(0, 350) || "D\xE9couvrez notre carte et nos sp\xE9cialit\xE9s pr\xE9par\xE9es chaque jour avec passion et ingr\xE9dients frais.",
-      category: scraped.inferredCategory,
-      categories: scraped.inferredCategories,
-      logoUrl: fallbackLogo,
-      bannerUrl: fallbackBanner,
-      promoMessage: "OFFRE D\xC9COUVERTE : -10% sur votre premi\xE8re commande ! \u2728",
-      email: scraped.emailHint || `contact@${cleanDomain}`,
-      phone: scraped.phoneHint || "+33 1 42 68 53 00",
-      rating: 4.9,
-      reviewCount: Math.floor(Math.random() * 80) + 45,
-      dispositionShop: scraped.addressHint ? scraped.addressHint.split(",")[0].trim() : "Secteur Central",
-      latitude: scraped.geo?.lat,
-      longitude: scraped.geo?.lng,
-      isCertified: true,
-      subscriptionTier: "pro",
-      dishes: dishesToUse
+      address: scraped.addressHint || null,
+      postalCode: scraped.postalCodeHint || null,
+      city: scraped.cityHint || null,
+      slogan: scraped.description ? scraped.description.slice(0, 95) + " \u2728" : void 0,
+      description: scraped.description || scraped.extractedBodyText.slice(0, 350) || void 0,
+      category: scraped.inferredCategory || "Gourmet",
+      categories: scraped.inferredCategories || [scraped.inferredCategory || "Gourmet"],
+      logoUrl: scraped.logoUrl || null,
+      bannerUrl: scraped.bannerUrl || null,
+      email: scraped.emailHint || null,
+      phone: scraped.phoneHint || null,
+      openingHours: scraped.openingHoursHint || null,
+      dishes: scraped.dishes
+      // STRICT: only real dishes, NO invented fallbacks!
     };
   }
-  const geo = calculateGeoCoordinates(extractedData.address || "", extractedData.dispositionShop || "Paris");
-  const finalLatitude = extractedData.latitude && Math.abs(extractedData.latitude) > 10 ? extractedData.latitude : geo.lat;
-  const finalLongitude = extractedData.longitude && Math.abs(extractedData.longitude) > 0 ? extractedData.longitude : geo.lng;
-  const finalDisposition = extractedData.dispositionShop || geo.district;
+  let finalLatitude = void 0;
+  let finalLongitude = void 0;
+  let finalDisposition = void 0;
+  if (scraped.geo && scraped.geo.lat && scraped.geo.lng) {
+    finalLatitude = scraped.geo.lat;
+    finalLongitude = scraped.geo.lng;
+    finalDisposition = scraped.addressHint ? scraped.addressHint.split(",")[0].trim() : void 0;
+  } else if (extractedData.address) {
+    const geoResult = await geocodeAddressReal(extractedData.address, extractedData.city || void 0);
+    if (geoResult) {
+      finalLatitude = geoResult.lat;
+      finalLongitude = geoResult.lng;
+      finalDisposition = geoResult.district;
+    }
+  }
+  const galleryPhotos = scraped.photos.filter((p) => p !== (extractedData.logoUrl || scraped.logoUrl)).slice(0, 10);
+  let confidenceScore = 20;
+  if (extractedData.address) confidenceScore += 15;
+  if (finalLatitude && finalLongitude) confidenceScore += 20;
+  if (extractedData.phone) confidenceScore += 10;
+  if (extractedData.email) confidenceScore += 5;
+  if (Array.isArray(extractedData.dishes) && extractedData.dishes.length > 0) confidenceScore += 20;
+  if (extractedData.logoUrl) confidenceScore += 5;
+  if (galleryPhotos.length > 0) confidenceScore += 5;
+  const dataConfidence = Math.min(100, confidenceScore);
   const existingMatch = findExistingRestaurant({
     ...extractedData,
     website: url,
@@ -7609,19 +7678,26 @@ Return a valid JSON object matching:
       name: extractedData.name,
       shortName: extractedData.shortName || extractedData.name,
       address: extractedData.address || existingMatch.address,
+      postalCode: extractedData.postalCode || scraped.postalCodeHint || existingMatch.postalCode,
+      city: extractedData.city || scraped.cityHint || existingMatch.city,
       logoUrl: extractedData.logoUrl || existingMatch.logoUrl,
       bannerUrl: extractedData.bannerUrl || existingMatch.bannerUrl,
+      photos: galleryPhotos.length > 0 ? galleryPhotos : existingMatch.photos,
       slogan: extractedData.slogan || existingMatch.slogan,
       email: extractedData.email || existingMatch.email,
       phone: extractedData.phone || existingMatch.phone,
+      openingHours: extractedData.openingHours || existingMatch.openingHours,
       description: extractedData.description || existingMatch.description,
       category: extractedData.category || existingMatch.category,
       categories: extractedData.categories || existingMatch.categories,
-      dispositionShop: finalDisposition,
-      latitude: finalLatitude,
-      longitude: finalLongitude,
+      dispositionShop: finalDisposition || existingMatch.dispositionShop,
+      latitude: finalLatitude ?? existingMatch.latitude,
+      longitude: finalLongitude ?? existingMatch.longitude,
       website: url,
-      websiteUrl: url
+      websiteUrl: url,
+      dataSources: Array.from(/* @__PURE__ */ new Set([...existingMatch.dataSources || [], ...scraped.dataSources])),
+      dataConfidence: Math.max(existingMatch.dataConfidence || 0, dataConfidence),
+      lastEnrichedAt: (/* @__PURE__ */ new Date()).toISOString()
     });
     const rIdx = restaurants.findIndex((r) => r.id === existingMatch.id);
     if (rIdx !== -1) {
@@ -7638,10 +7714,10 @@ Return a valid JSON object matching:
           id: `dish-${Math.random().toString(36).substring(2, 9)}`,
           restaurantId: existingMatch.id,
           name: dishData.name,
-          description: dishData.description,
+          description: dishData.description || "",
           price: Number(dishData.price) || 14.5,
           isAvailable: true,
-          imageUrl: dishData.imageUrl || "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=600&auto=format&fit=crop&q=80",
+          imageUrl: dishData.imageUrl || void 0,
           createdAt: (/* @__PURE__ */ new Date()).toISOString(),
           category: dishData.category || "Plat"
         };
@@ -7660,7 +7736,7 @@ Return a valid JSON object matching:
       isUpdated: true,
       countDishes: allDishes.length,
       countVideos: allVideos.length,
-      message: `Le restaurant "${mergedRestaurant.name}" a \xE9t\xE9 enrichi avec succ\xE8s (${addedDishes2.length} nouveaux plats ajout\xE9s, g\xE9olocalisation: ${finalDisposition}).`
+      message: `Le restaurant "${mergedRestaurant.name}" a \xE9t\xE9 enrichi avec succ\xE8s (${addedDishes2.length} nouveaux plats r\xE9els ajout\xE9s, photos: ${galleryPhotos.length}, g\xE9olocalisation: ${finalDisposition || "Actualis\xE9e"}).`
     };
   }
   const newRestId = `rest-${Math.random().toString(36).substring(2, 9)}`;
@@ -7669,36 +7745,43 @@ Return a valid JSON object matching:
     userId: "usr-admin-1",
     name: extractedData.name,
     shortName: extractedData.shortName || extractedData.name,
-    address: extractedData.address || `15 Rue de la Gastronomie, 75001 Paris`,
+    address: extractedData.address || "",
+    postalCode: extractedData.postalCode || scraped.postalCodeHint || void 0,
+    city: extractedData.city || scraped.cityHint || void 0,
     commissionRateDelivery: 15,
     commissionRateCollect: 5,
     stripeAccountId: `acct_${Math.random().toString(36).substring(2, 9).toUpperCase()}`,
-    logoUrl: extractedData.logoUrl || "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=200&auto=format&fit=crop&q=80",
-    bannerUrl: extractedData.bannerUrl || "https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=1200&auto=format&fit=crop&q=80",
-    slogan: extractedData.slogan || "Une exp\xE9rience culinaire d'exception livr\xE9e chez vous.",
+    logoUrl: extractedData.logoUrl || scraped.logoUrl || void 0,
+    bannerUrl: extractedData.bannerUrl || scraped.bannerUrl || void 0,
+    photos: galleryPhotos.length > 0 ? galleryPhotos : void 0,
+    slogan: extractedData.slogan || void 0,
     isCertified: true,
     subscriptionTier: extractedData.subscriptionTier || "pro",
-    promoMessage: extractedData.promoMessage || "OFFRE FIDELITE : -15% sur toute la carte aujourd'hui !",
+    promoMessage: "Bienvenue chez " + extractedData.name + " ! D\xE9couvrez notre carte authentique.",
     countdownMinutes: Math.floor(Math.random() * 10) + 5,
-    countdownText: "Plat phare en cours de dressage minute",
-    likesReceived: Math.floor(Math.random() * 600) + 150,
-    pointsReceived: Math.floor(Math.random() * 500) + 100,
+    countdownText: "Pr\xE9paration minute de votre commande",
+    likesReceived: Math.floor(Math.random() * 150) + 20,
+    pointsReceived: Math.floor(Math.random() * 100) + 15,
     createdAt: (/* @__PURE__ */ new Date()).toISOString(),
-    email: extractedData.email || `contact@${extractedData.name.toLowerCase().replace(/[^a-z0-9]/g, "")}.com`,
-    phone: extractedData.phone || "+33 1 42 68 53 00",
-    description: extractedData.description || extractedData.slogan,
+    email: extractedData.email || void 0,
+    phone: extractedData.phone || void 0,
+    openingHours: extractedData.openingHours || scraped.openingHoursHint || void 0,
+    description: extractedData.description || extractedData.slogan || void 0,
     category: extractedData.category || "Fran\xE7ais",
     categories: extractedData.categories || [extractedData.category || "Fran\xE7ais"],
     isFavorite: true,
-    dispositionShop: finalDisposition,
-    latitude: finalLatitude,
-    longitude: finalLongitude,
+    dispositionShop: finalDisposition || void 0,
+    latitude: finalLatitude ?? void 0,
+    longitude: finalLongitude ?? void 0,
     website: url,
     websiteUrl: url,
     isOrderingEnabled: true,
     isPublished: true,
-    rating: Number(extractedData.rating) || 4.9,
-    reviewCount: Number(extractedData.reviewCount) || 120
+    dataSources: scraped.dataSources,
+    dataConfidence,
+    lastEnrichedAt: (/* @__PURE__ */ new Date()).toISOString(),
+    rating: 4.9,
+    reviewCount: 95
   };
   restaurants.unshift(newRestaurant);
   await persistRestaurantToFirestore(newRestaurant);
@@ -7708,10 +7791,10 @@ Return a valid JSON object matching:
       id: `dish-${Math.random().toString(36).substring(2, 9)}`,
       restaurantId: newRestId,
       name: dishData.name,
-      description: dishData.description,
+      description: dishData.description || "",
       price: Number(dishData.price) || 14.5,
       isAvailable: true,
-      imageUrl: dishData.imageUrl || "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=600&auto=format&fit=crop&q=80",
+      imageUrl: dishData.imageUrl || void 0,
       createdAt: (/* @__PURE__ */ new Date()).toISOString(),
       category: dishData.category || "Plat"
     };
@@ -7746,7 +7829,7 @@ Return a valid JSON object matching:
   createdVideos.push(video1);
   await persistVideoToFirestore(video1);
   saveData();
-  console.log(`[AI Scraper SUCCESS] Created restaurant "${newRestaurant.name}" with ${addedDishes.length} dishes, geocoded (${newRestaurant.latitude}, ${newRestaurant.longitude}) and video attached.`);
+  console.log(`[AI Scraper SUCCESS] Created restaurant "${newRestaurant.name}" with ${addedDishes.length} real dishes, ${galleryPhotos.length} photos, geocoded (${newRestaurant.latitude}, ${newRestaurant.longitude}) and video attached.`);
   return {
     restaurant: newRestaurant,
     dishes: addedDishes,
@@ -7754,7 +7837,7 @@ Return a valid JSON object matching:
     isUpdated: false,
     countDishes: addedDishes.length,
     countVideos: createdVideos.length,
-    message: `Le restaurant "${newRestaurant.name}" a \xE9t\xE9 extrait et configur\xE9 avec succ\xE8s avec ${addedDishes.length} plats et sa capsule vid\xE9o immersive.`
+    message: `Le restaurant "${newRestaurant.name}" a \xE9t\xE9 extrait avec succ\xE8s (${addedDishes.length} plats r\xE9els, ${galleryPhotos.length} photos r\xE9elles, g\xE9olocalisation: ${finalDisposition || "Actualis\xE9e"}).`
   };
 }
 app.post("/api/extract-website", async (req, res) => {
@@ -8877,238 +8960,99 @@ Return a valid JSON object matching this schema EXACTLY:
 });
 app.post("/api/sourcing/radar", async (req, res) => {
   const { city } = req.body;
-  if (!city) {
+  if (!city || typeof city !== "string" || !city.trim()) {
     return res.status(400).json({ error: "La ville de recherche est requise." });
   }
   const cleanCity = city.trim();
-  console.log(`[Google Maps Radar] Scanning restaurants in city: ${cleanCity}`);
-  const cityCoords = {
-    "paris": { lat: 48.8566, lng: 2.3522 },
-    "lyon": { lat: 45.764, lng: 4.8357 },
-    "marseille": { lat: 43.2965, lng: 5.3698 },
-    "bordeaux": { lat: 44.8378, lng: -0.5792 },
-    "nice": { lat: 43.7102, lng: 7.262 },
-    "lille": { lat: 50.6292, lng: 3.0573 },
-    "toulouse": { lat: 43.6047, lng: 1.4442 }
-  };
-  const lowercaseCity = cleanCity.toLowerCase();
-  const cityCenter = cityCoords[lowercaseCity] || { lat: 48.8566 + (Math.random() * 0.1 - 0.05), lng: 2.3522 + (Math.random() * 0.1 - 0.05) };
-  const simulationFallback = {
-    "paris": [
-      {
-        name: "La Felicit\xE0 (Station F)",
-        address: "55 Boulevard Vincent Auriol, 75013 Paris",
-        city: "Paris",
-        category: "Italien",
-        description: "Le plus grand restaurant d'Europe. Un food-market italien immersif de 4500m\xB2 avec des corners pizzas napolitaines, p\xE2tes fra\xEEches roul\xE9es dans la meule de parmesan, cocktails artisanaux et desserts gargantuesques.",
-        district: "13e Arr.",
-        latitude: 48.8315,
-        longitude: 2.3762,
-        website: "https://www.bigmammagroup.com/fr/trattorias/la-felicita",
-        slogan: "Le temple de la street-food italienne en plein Paris ! \u{1F355}\u{1F1EE}\u{1F1F9}"
-      },
-      {
-        name: "Girafe Paris",
-        address: "1 Place du Trocad\xE9ro et du 11 Novembre, 75116 Paris",
-        city: "Paris",
-        category: "Fran\xE7ais",
-        description: "Une terrasse spectaculaire face \xE0 la Tour Eiffel, design\xE9e par Joseph Dirand. Menu de haute mer d'une fra\xEEcheur absolue avec ceviche de daurade, homards grill\xE9s et turbot r\xF4ti.",
-        district: "11e Arr.",
-        latitude: 48.8624,
-        longitude: 2.2872,
-        website: "https://girafes-restaurant.com",
-        slogan: "La plus belle terrasse marine face \xE0 la Tour Eiffel. \u{1F99E}\u2728"
-      },
-      {
-        name: "Kodawari Ramen (Tsukiji)",
-        address: "12 Rue de Richelieu, 75001 Paris",
-        city: "Paris",
-        category: "Japonais",
-        description: "Immersion totale dans un march\xE9 aux poissons traditionnel de Tokyo reconstitu\xE9. Ramen au bouillon de poissons de chalut sauvage, coquillages et nouilles artisanales p\xE9tries sur place.",
-        district: "1er Arr.",
-        latitude: 48.8647,
-        longitude: 2.3364,
-        website: "https://www.kodawari-ramen.com",
-        slogan: "Un voyage direct pour Tsukiji sans quitter Paris. \u{1F35C}\u{1F41F}"
-      },
-      {
-        name: "PNY Burgers Marais",
-        address: "1 Rue de Perr\xE9e, 75003 Paris",
-        city: "Paris",
-        category: "Burgers",
-        description: "Les meilleurs burgers gourmets de la capitale avec du b\u0153uf matur\xE9 s\xE9lectionn\xE9, cheddar fondu 18 mois d'affinage et frites maison cuites en deux bains. Cadre n\xE9on ultra styl\xE9.",
-        district: "3e Arr.",
-        latitude: 48.8637,
-        longitude: 2.3615,
-        website: "https://pnyburger.com",
-        slogan: "Smash croustillant extr\xEAme et b\u0153uf d'exception. \u{1F354}\u{1F525}"
-      },
-      {
-        name: "Fragments Paris",
-        address: "76 Rue des Tournelles, 75003 Paris",
-        city: "Paris",
-        category: "Caf\xE9",
-        description: "L'un des pionniers du caf\xE9 de sp\xE9cialit\xE9 dans le Marais. C\xE9l\xE8bre pour son avocado toast au levain croustillant, son cinnamon roll brioch\xE9 dor\xE9 et sa s\xE9lection de th\xE9s de prestige.",
-        district: "3e Arr.",
-        latitude: 48.8579,
-        longitude: 2.3672,
-        website: "https://www.instagram.com/fragmentsparis",
-        slogan: "Caf\xE9 de sp\xE9cialit\xE9 torr\xE9fi\xE9 et brunch gourmand. \u2615\u{1F950}"
-      },
-      {
-        name: "Tacos & Co Cantina",
-        address: "14 Rue de la Roquette, 75011 Paris",
-        city: "Paris",
-        category: "Tex-Mex",
-        description: "La cuisine mexicaine de rue authentique avec des tortillas de ma\xEFs frais faites \xE0 la main, viandes marin\xE9es longuement aux \xE9pices et guacamole ultra-frais \xE9cras\xE9 minute au mortier.",
-        district: "11e Arr.",
-        latitude: 48.8543,
-        longitude: 2.3721,
-        website: "https://www.tacosandco.fr",
-        slogan: "Le vrai go\xFBt de la street-food mexicaine ! \u{1F1F2}\u{1F1FD}\u{1F32E}"
-      }
-    ],
-    "nice": [
-      {
-        name: "Le Plongeoir",
-        address: "60 Boulevard Franck Pilatte, 06300 Nice",
-        city: "Nice",
-        category: "Fran\xE7ais",
-        description: "Restaurant mythique perch\xE9 sur son rocher au-dessus de la mer M\xE9diterran\xE9e. Une cuisine raffin\xE9e aux inspirations azur\xE9ennes mettant en valeur les poissons de la p\xEAche locale.",
-        district: "Port de Nice",
-        latitude: 43.6918,
-        longitude: 7.2882,
-        website: "https://www.leplongeoir.com",
-        slogan: "Une cuisine d'exception suspendue au-dessus de la mer. \u{1F30A}\u{1F37D}\uFE0F"
-      },
-      {
-        name: "Peixes Nice",
-        address: "4 Rue de l'Op\xE9ra, 06300 Nice",
-        city: "Nice",
-        category: "Gourmet",
-        description: "Une taverne marine d\xE9complex\xE9e \xE0 l'ambiance lagon. Ceviche ultra-frais acidul\xE9 au citron yuzu, poulpe grill\xE9 caram\xE9lis\xE9 et tartare de daurade aux grenades sauvages.",
-        district: "Vieux Nice",
-        latitude: 43.6958,
-        longitude: 7.2721,
-        website: "https://www.peixes.fr",
-        slogan: "L'art du ceviche et des saveurs marines revisit\xE9es. \u{1F41F}\u{1F34B}"
-      },
-      {
-        name: "La Voglia",
-        address: "2 Rue Saint-Fran\xE7ois de Paule, 06300 Nice",
-        city: "Nice",
-        category: "Italien",
-        description: "Une v\xE9ritable institution ni\xE7oise pour d\xE9guster des portions g\xE9n\xE9reuses de p\xE2tes fra\xEEches au homard, des pizzas au feu de bois \xE0 la truffe et un tiramisu l\xE9gendaire.",
-        district: "Cours Saleya",
-        latitude: 43.6951,
-        longitude: 7.2715,
-        website: "https://lavoglia.fr",
-        slogan: "La g\xE9n\xE9rosit\xE9 italienne face au march\xE9 aux fleurs. \u{1F1EE}\u{1F1F9}\u{1F35D}"
-      },
-      {
-        name: "Clay Coffee & Brunch",
-        address: "3 Rue de la Pr\xE9fecture, 06300 Nice",
-        city: "Nice",
-        category: "Caf\xE9",
-        description: "Le rep\xE8re esth\xE9tique pour un brunch en terrasse ombrag\xE9e. Pancakes \xE0 la pistache d'Iran, toasts de brioche perdue caram\xE9lis\xE9s et lattes artisanaux color\xE9s au matcha bio.",
-        district: "Vieux Nice",
-        latitude: 43.6965,
-        longitude: 7.2742,
-        website: "https://claynice.com",
-        slogan: "Brunch d'exception et caf\xE9 de sp\xE9cialit\xE9. \u{1F95E}\u2615"
-      }
-    ]
-  };
+  console.log(`[Google Maps Radar] Scanning real restaurants in city: ${cleanCity}`);
   try {
     const client = getGeminiClient();
-    if (client) {
-      console.log(`[Google Maps Radar] Querying Gemini with Google Search Grounding tool...`);
-      const prompt = `You are a virtual photo studio director and restaurant discovery scout.
-Your task is to scan and list 6 real, popular, or recently opened restaurants in the city of: "${cleanCity}".
-Use Google Search grounding to find real places, complete with real street addresses, actual names, and approximate latitude and longitude coordinates in that city.
+    if (!client) {
+      return res.status(503).json({
+        success: false,
+        error: "Le client IA Studio n'est pas disponible pour la recherche en direct. Aucune donn\xE9e fictive n'est autoris\xE9e."
+      });
+    }
+    console.log(`[Google Maps Radar] Querying Gemini with Google Search Grounding for: ${cleanCity}...`);
+    const prompt = `You are a professional culinary scout discovering real existing restaurants in the city of: "${cleanCity}".
+CRITICAL MANDATE:
+1. Every restaurant in your response MUST BE A REAL, ACTUALLY EXISTING RESTAURANT in "${cleanCity}".
+2. STRICTLY FORBIDDEN: DO NOT INVENT fake restaurants, fake street names, or simulated data.
+3. Find their actual real name, their actual real street address in "${cleanCity}", their authentic category, a concise French description of their real culinary specialties, their official website URL or social page (Instagram/Facebook/Google) if found, and their real district or neighborhood.
 
-You must return the list strictly as a JSON array of objects.
-The JSON schema must be a list of objects, each containing:
-- "name": String (e.g. "Coya Paris", "La Felicit\xE0")
-- "address": String (Full street address, e.g. "83-85 Boulevard Vincent Auriol, 75013 Paris")
-- "city": String (The name of the city, e.g. "Paris")
-- "category": String (One of: "Italien", "Japonais", "Burgers", "Fran\xE7ais", "Caf\xE9", "Tex-Mex", "Gourmet")
-- "description": String (A professional 1-2 sentence French review summarizing their gourmet specialty, vibe, or why they are trending.)
-- "district": String (Arrondissement or district, e.g. "13e Arr.", "Vieux-Nice", "Part-Dieu")
-- "latitude": Number (Float, e.g. 48.8315)
-- "longitude": Number (Float, e.g. 2.3762)
-- "website": String (A real URL, e.g. "https://www.co-ya.com")
-- "slogan": String (An appetizing, trendy French tagline for this restaurant with an emoji, e.g. "L'ambiance festive p\xE9ruvienne et saveurs d'exception ! \u{1F336}\uFE0F\u2728")
-`;
-      const response = await client.models.generateContent({
-        model: "gemini-3.8-flash",
-        contents: prompt,
-        config: {
-          tools: [{ googleSearch: {} }],
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                name: { type: Type.STRING },
-                address: { type: Type.STRING },
-                city: { type: Type.STRING },
-                category: { type: Type.STRING },
-                description: { type: Type.STRING },
-                district: { type: Type.STRING },
-                latitude: { type: Type.NUMBER },
-                longitude: { type: Type.NUMBER },
-                website: { type: Type.STRING },
-                slogan: { type: Type.STRING }
-              },
-              required: ["name", "address", "city", "category", "description", "latitude", "longitude"]
-            }
+Return strictly a JSON array of up to 6 real restaurants matching this schema:
+[
+  {
+    "name": "Exact real restaurant name",
+    "address": "Actual real street address with postal code and city",
+    "city": "${cleanCity}",
+    "category": "Cuisine category (e.g. Italien, Japonais, Bistrot, Burgers, Fran\xE7ais, Caf\xE9 & Brunch, etc.)",
+    "description": "Accurate 1-2 sentence French review of their authentic concept and dishes",
+    "district": "Neighborhood or arrondissement",
+    "latitude": 48.8566,
+    "longitude": 2.3522,
+    "website": "Real official website URL or official social page if available",
+    "slogan": "Appetizing French summary tagline based on their real culinary identity"
+  }
+]`;
+    const response = await client.models.generateContent({
+      model: "gemini-3.8-flash",
+      contents: prompt,
+      config: {
+        tools: [{ googleSearch: {} }],
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              name: { type: Type.STRING },
+              address: { type: Type.STRING },
+              city: { type: Type.STRING },
+              category: { type: Type.STRING },
+              description: { type: Type.STRING },
+              district: { type: Type.STRING },
+              latitude: { type: Type.NUMBER },
+              longitude: { type: Type.NUMBER },
+              website: { type: Type.STRING },
+              slogan: { type: Type.STRING }
+            },
+            required: ["name", "address", "city", "category", "description"]
           }
         }
-      });
-      const text = response.text?.trim() || "[]";
-      const parsed = JSON.parse(text);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        console.log(`[Google Maps Radar] Successfully sourced ${parsed.length} real restaurants from Gemini Grounding !`);
-        return res.json({ success: true, method: "gemini_grounding", results: parsed });
       }
+    });
+    const text = response.text?.trim() || "[]";
+    const parsed = JSON.parse(text);
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      const enrichedResults = await Promise.all(parsed.map(async (item) => {
+        if (!item.latitude || !item.longitude || item.latitude === 0) {
+          const geo = await geocodeAddressReal(item.address, cleanCity);
+          if (geo) {
+            return {
+              ...item,
+              latitude: geo.lat,
+              longitude: geo.lng,
+              district: item.district || geo.district
+            };
+          }
+        }
+        return item;
+      }));
+      console.log(`[Google Maps Radar] Successfully sourced ${enrichedResults.length} real restaurants from Google Search Grounding for ${cleanCity}!`);
+      return res.json({ success: true, method: "gemini_grounding", results: enrichedResults });
     }
+    return res.status(404).json({
+      success: false,
+      error: `Aucun restaurant r\xE9el n'a pu \xEAtre localis\xE9 \xE0 "${cleanCity}" via le r\xE9seau de recherche. Veuillez v\xE9rifier l'orthographe de la ville.`
+    });
   } catch (err) {
-    isGeminiAuthOperational = false;
-    lastGeminiAuthFailure = Date.now();
-    console.log("[Google Maps Radar] Grounding search notice: using radar simulation engine.", err?.message || "fallback");
-  }
-  const cityKey = lowercaseCity.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-  let results = simulationFallback[cityKey];
-  if (!results) {
-    const genericCategories = ["Italien", "Japonais", "Burgers", "Fran\xE7ais", "Caf\xE9", "Tex-Mex", "Gourmet"];
-    const prefixes = ["L'Atelier", "Le Bistrot", "La Trattoria", "Chez", "O'Smash", "Ramen & Co", "Sweet", "Cantina"];
-    const suffixes = ["Gourmand", "du March\xE9", "Bella", "Express", "Lab", "Zen", "Cozy", "Loco"];
-    const streetNames = ["Rue de la R\xE9publique", "Grand Rue", "Avenue de la Gare", "Place Saint-Pierre", "Boulevard des Arts", "Rue Neuve"];
-    results = Array.from({ length: 6 }).map((_, idx) => {
-      const cat = genericCategories[idx % genericCategories.length];
-      const name = `${prefixes[idx % prefixes.length]} ${suffixes[(idx + 2) % suffixes.length]} ${cleanCity}`;
-      const street = `${Math.floor(Math.random() * 50) + 1} ${streetNames[idx % streetNames.length]}`;
-      const address = `${street}, ${cleanCity}`;
-      const dist = `Secteur ${idx + 1}`;
-      const latOffset = Math.random() * 0.02 - 0.01;
-      const lngOffset = Math.random() * 0.02 - 0.01;
-      return {
-        name,
-        address,
-        city: cleanCity,
-        category: cat,
-        description: `Un nouvel \xE9tablissement tendance \xE0 ${cleanCity} mettant \xE0 l'honneur des produits de saison cuisin\xE9s maison. Une atmosph\xE8re conviviale et un design soign\xE9 de haute facture.`,
-        district: dist,
-        latitude: cityCenter.lat + latOffset,
-        longitude: cityCenter.lng + lngOffset,
-        website: `https://www.instagram.com/${name.toLowerCase().replace(/[^a-z0-9]/g, "")}`,
-        slogan: `La nouvelle sensation culinaire incontournable \xE0 ${cleanCity} ! \u{1F373}\u2728`
-      };
+    console.error("[Google Maps Radar ERROR]", err?.message || err);
+    return res.status(503).json({
+      success: false,
+      error: `\xC9chec de la recherche radar Google Search pour "${cleanCity}" : ${err?.message || "Service indisponible"}. Conform\xE9ment \xE0 la politique d'authenticit\xE9 FIDFUD, aucune donn\xE9e invent\xE9e n'a \xE9t\xE9 g\xE9n\xE9r\xE9e.`
     });
   }
-  res.json({ success: true, method: "simulation_sourcing", results });
 });
 app.post("/api/restaurants/import-sourced", async (req, res) => {
   const { name, address, city, category, description, district, latitude, longitude, website, slogan } = req.body;
@@ -9121,113 +9065,134 @@ app.post("/api/restaurants/import-sourced", async (req, res) => {
     return res.json({ success: true, isAlreadyImported: true, restaurant: exists });
   }
   const id = "rest-" + Math.random().toString(36).substring(2, 9);
-  let logoUrl = "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=150&auto=format&fit=crop&q=80";
-  let bannerUrl = "https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=1200&auto=format&fit=crop&q=80";
-  const cat = (category || "Gourmet").toLowerCase();
-  if (cat.includes("pizz") || cat.includes("ital")) {
-    logoUrl = "https://images.unsplash.com/photo-1513104890138-7c749659a591?w=150&auto=format&fit=crop&q=80";
-    bannerUrl = "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=1200&auto=format&fit=crop&q=80";
-  } else if (cat.includes("ramen") || cat.includes("japon") || cat.includes("sush")) {
-    logoUrl = "https://images.unsplash.com/photo-1569718212165-3a8278d5f624?w=150&auto=format&fit=crop&q=80";
-    bannerUrl = "https://images.unsplash.com/photo-1579871494447-9811cf80d66c?w=1200&auto=format&fit=crop&q=80";
-  } else if (cat.includes("burg") || cat.includes("street")) {
-    logoUrl = "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=150&auto=format&fit=crop&q=80";
-    bannerUrl = "https://images.unsplash.com/photo-1550547660-d9450f859349?w=1200&auto=format&fit=crop&q=80";
-  } else if (cat.includes("caf") || cat.includes("brunch") || cat.includes("dess")) {
-    logoUrl = "https://images.unsplash.com/photo-1567620905732-2d1ec7ab7445?w=150&auto=format&fit=crop&q=80";
-    bannerUrl = "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=1200&auto=format&fit=crop&q=80";
+  let finalLat = typeof latitude === "number" && !isNaN(latitude) && latitude !== 0 ? latitude : void 0;
+  let finalLng = typeof longitude === "number" && !isNaN(longitude) && longitude !== 0 ? longitude : void 0;
+  let finalDistrict = district;
+  if (!finalLat || !finalLng) {
+    const geo = await geocodeAddressReal(address, city);
+    if (geo) {
+      finalLat = geo.lat;
+      finalLng = geo.lng;
+      if (!finalDistrict) finalDistrict = geo.district;
+    }
   }
-  const finalDistrict = district || `${Math.floor(Math.random() * 20) + 1}e Arr.`;
+  let realDishes = [];
+  let realLogoUrl = void 0;
+  let realBannerUrl = void 0;
+  let realPhotos = [];
+  let realPhone = void 0;
+  let realEmail = void 0;
+  let realPostalCode = void 0;
+  let realOpeningHours = void 0;
+  const dataSources = ["radar_grounding", "geo_api"];
+  if (website && typeof website === "string" && website.startsWith("http")) {
+    try {
+      console.log(`[Import Sourced] Enriching "${name}" from official website: ${website}`);
+      const scraped = await scrapeUrlMetadata(website);
+      dataSources.push("website_enrichment");
+      if (scraped.logoUrl) realLogoUrl = scraped.logoUrl;
+      if (scraped.bannerUrl || scraped.heroImages[0]) realBannerUrl = scraped.bannerUrl || scraped.heroImages[0];
+      if (scraped.photos && scraped.photos.length > 0) {
+        realPhotos = scraped.photos.filter((p) => p !== (realLogoUrl || scraped.logoUrl)).slice(0, 10);
+      }
+      if (scraped.phoneHint) realPhone = scraped.phoneHint;
+      if (scraped.emailHint) realEmail = scraped.emailHint;
+      if (scraped.postalCodeHint) realPostalCode = scraped.postalCodeHint;
+      if (scraped.openingHoursHint) realOpeningHours = scraped.openingHoursHint;
+      if (!finalLat && scraped.geo?.lat) finalLat = scraped.geo.lat;
+      if (!finalLng && scraped.geo?.lng) finalLng = scraped.geo.lng;
+      for (const d of scraped.dishes || []) {
+        const newDish = {
+          id: "dish-" + Math.random().toString(36).substring(2, 9),
+          restaurantId: id,
+          name: d.name,
+          description: d.description || "",
+          price: d.price || 14.5,
+          imageUrl: d.imageUrl || void 0,
+          isAvailable: true,
+          createdAt: (/* @__PURE__ */ new Date()).toISOString(),
+          category: d.category || "Plat"
+        };
+        realDishes.push(newDish);
+        dishes.unshift(newDish);
+        await persistDishToFirestore(newDish);
+      }
+    } catch (enrichErr) {
+      console.warn(`[Import Sourced] Website enrichment notice for ${name}:`, enrichErr?.message);
+    }
+  }
+  const dataConfidence = (realDishes.length > 0 ? 30 : 0) + (finalLat ? 30 : 0) + (realLogoUrl ? 20 : 0) + (website ? 20 : 0);
   const newRest = {
     id,
     userId: "usr-admin-1",
     name,
-    shortName: name,
+    shortName: name.split(/[-|—]/)[0].trim(),
     address,
+    postalCode: realPostalCode || void 0,
+    city: city || void 0,
     commissionRateDelivery: 10,
     commissionRateCollect: 5,
     stripeAccountId: `acct_${Math.random().toString(36).substring(2, 9).toUpperCase()}`,
-    logoUrl,
-    bannerUrl,
-    slogan: slogan || `L'exp\xE9rience culinaire incontournable de ${city} ! \u2728`,
+    logoUrl: realLogoUrl,
+    bannerUrl: realBannerUrl,
+    photos: realPhotos.length > 0 ? realPhotos : void 0,
+    slogan: slogan || void 0,
     isCertified: true,
     subscriptionTier: "pro",
-    promoMessage: "Offre Radar Google Maps : 1 boisson offerte ! \u{1F964}",
+    promoMessage: "Bienvenue chez " + name + " !",
     countdownMinutes: Math.floor(Math.random() * 10) + 5,
-    countdownText: "Plat signature en cours de cuisson minute",
-    likesReceived: Math.floor(Math.random() * 200) + 20,
-    pointsReceived: Math.floor(Math.random() * 150) + 30,
+    countdownText: "Pr\xE9paration minute de votre commande",
+    likesReceived: Math.floor(Math.random() * 150) + 20,
+    pointsReceived: Math.floor(Math.random() * 100) + 15,
     createdAt: (/* @__PURE__ */ new Date()).toISOString(),
-    email: `contact@${name.toLowerCase().replace(/[^a-z0-9]/g, "")}.com`,
-    phone: "+33 1 42 33 " + Math.floor(Math.random() * 89 + 10) + " " + Math.floor(Math.random() * 89 + 10),
-    description,
+    email: realEmail,
+    phone: realPhone,
+    openingHours: realOpeningHours || void 0,
+    description: description || void 0,
     category: category || "Gourmet",
-    dispositionShop: finalDistrict,
+    categories: [category || "Gourmet"],
+    dispositionShop: finalDistrict || city,
     isFavorite: true,
-    latitude: Number(latitude),
-    longitude: Number(longitude),
-    isOrderingEnabled: true
+    latitude: finalLat,
+    longitude: finalLng,
+    website: website || void 0,
+    websiteUrl: website || void 0,
+    isOrderingEnabled: true,
+    isPublished: true,
+    dataSources,
+    dataConfidence: Math.max(40, dataConfidence),
+    lastEnrichedAt: (/* @__PURE__ */ new Date()).toISOString(),
+    rating: 4.9,
+    reviewCount: 90
   };
   restaurants.push(newRest);
   await persistRestaurantToFirestore(newRest);
-  const dishId = "dish-" + Math.random().toString(36).substring(2, 9);
-  let dishName = `Signature Gourmet ${name}`;
-  let dishPrice = 14.5;
-  let dishDesc = `Notre fameuse cr\xE9ation culinaire pr\xE9par\xE9e \xE0 la commande avec des ingr\xE9dients locaux extra-frais.`;
-  if (cat.includes("pizz") || cat.includes("ital")) {
-    dishName = `La Pizza Sp\xE9ciale du Chef`;
-    dishPrice = 15.9;
-    dishDesc = `Tomates locales, burrata cr\xE9meuse, jambon de Parme affin\xE9 18 mois et filet d'huile d'olive infus\xE9e.`;
-  } else if (cat.includes("ramen") || cat.includes("japon") || cat.includes("sush")) {
-    dishName = `Le Ramen Traditionnel d'Antan`;
-    dishPrice = 16.5;
-    dishDesc = `Bouillon mijot\xE9 maison, nouilles de froment artisanales, \u0153uf marin\xE9 coulant et l\xE9gumes croquants.`;
-  } else if (cat.includes("burg") || cat.includes("street")) {
-    dishName = `Le Double Bacon Smash Deluxe`;
-    dishPrice = 13.9;
-    dishDesc = `Deux steaks de b\u0153uf Angus smash\xE9s, cheddar matur\xE9, tranches de bacon fum\xE9 et notre l\xE9gendaire sauce maison.`;
-  } else if (cat.includes("caf") || cat.includes("brunch") || cat.includes("dess")) {
-    dishName = `Le French Toast & Cr\xE8me Pistache`;
-    dishPrice = 11.5;
-    dishDesc = `Brioche perdue ultra-moelleuse, garnie d'\xE9clats de pistaches grill\xE9es et cr\xE8me fouett\xE9e onctueuse.`;
-  }
-  const newDish = {
-    id: dishId,
-    restaurantId: id,
-    name: dishName,
-    price: dishPrice,
-    description: dishDesc,
-    imageUrl: logoUrl,
-    isAvailable: true,
-    isPopular: true
-  };
-  dishes.push(newDish);
-  await persistDishToFirestore(newDish);
+  const cat = (category || "Gourmet").toLowerCase();
   let selectedVidUrl = AVAILABLE_FOOD_VIDEOS[6].url;
-  if (cat.includes("pizz")) {
-    selectedVidUrl = AVAILABLE_FOOD_VIDEOS[0].url;
-  } else if (cat.includes("ramen") || cat.includes("soup")) {
-    selectedVidUrl = AVAILABLE_FOOD_VIDEOS[1].url;
-  } else if (cat.includes("burg") || cat.includes("street")) {
-    selectedVidUrl = AVAILABLE_FOOD_VIDEOS[2].url;
-  } else if (cat.includes("sush") || cat.includes("japon")) {
-    selectedVidUrl = AVAILABLE_FOOD_VIDEOS[4].url;
-  } else if (cat.includes("caf") || cat.includes("go\xFBt")) {
-    selectedVidUrl = AVAILABLE_FOOD_VIDEOS[3].url;
-  }
+  if (cat.includes("pizz")) selectedVidUrl = AVAILABLE_FOOD_VIDEOS[0].url;
+  else if (cat.includes("ramen") || cat.includes("soup")) selectedVidUrl = AVAILABLE_FOOD_VIDEOS[1].url;
+  else if (cat.includes("burg") || cat.includes("street")) selectedVidUrl = AVAILABLE_FOOD_VIDEOS[2].url;
+  else if (cat.includes("sush") || cat.includes("japon")) selectedVidUrl = AVAILABLE_FOOD_VIDEOS[4].url;
+  else if (cat.includes("caf") || cat.includes("brunch")) selectedVidUrl = AVAILABLE_FOOD_VIDEOS[3].url;
   const newVideo = {
     id: "vid-" + Math.random().toString(36).substring(2, 9),
     restaurantId: id,
     videoUrl: selectedVidUrl,
-    associatedDishId: dishId,
-    title: `\u{1F525} Sensation culinaire chez ${name} : d\xE9couvrez notre d\xE9licieuse cr\xE9ation ${dishName} ! \u{1F924}\u2728`,
+    associatedDishId: realDishes[0]?.id || void 0,
+    title: `\u{1F525} NOUVEAU SUR FIDFUD : D\xE9couvrez ${name} ! ${slogan || ""}`,
     likesCount: Math.floor(Math.random() * 100) + 15,
     createdAt: (/* @__PURE__ */ new Date()).toISOString()
   };
   videos.unshift(newVideo);
   await persistVideoToFirestore(newVideo);
   saveData();
-  res.status(201).json({ success: true, restaurant: newRest });
+  res.status(201).json({
+    success: true,
+    restaurant: newRest,
+    dishes: realDishes,
+    countDishes: realDishes.length,
+    message: `Restaurant r\xE9el "${name}" import\xE9 avec succ\xE8s (${realDishes.length} plats r\xE9els).`
+  });
 });
 async function startStandaloneServer() {
   if (process.env.NODE_ENV !== "production" && !process.env.VERCEL) {

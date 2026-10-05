@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { safeApiJson } from '../utils/apiHelpers';
 import { getSafeVideoUrl, STABLE_CULINARY_FALLBACK_VIDEOS, isDirectPlayableVideo } from '../utils/videoUtils';
 import BackgroundVideoPlayer from './BackgroundVideoPlayer';
 import EngagementPromptModal from './EngagementPromptModal';
@@ -1237,9 +1238,11 @@ export default function AdminCMS({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url: rawInput })
       });
-      const data = await res.json();
+      const apiResult = await safeApiJson(res, 'IA Scraper (/api/extract-website)');
       setIsExtractingWebsite(false);
-      if (res.ok && data.success) {
+
+      if (apiResult.ok && apiResult.data?.success) {
+        const data = apiResult.data;
         setWebsiteUrlToExtract('');
         onRefreshData();
         if (data.isBulk) {
@@ -1248,7 +1251,7 @@ export default function AdminCMS({
           alert(`✨ Extraction réussie ! Le restaurant "${data.restaurant?.name || 'Gourmand'}" avec ${data.countDishes || data.dishes?.length || 0} plats et sa capsule vidéo a été synchronisé.`);
         }
       } else {
-        alert(`Information d'extraction : ${data.error || 'Impossible d\'extraire les données'}`);
+        alert(apiResult.error || `Information d'extraction : ${apiResult.data?.error || 'Impossible d\'extraire les données'}`);
       }
     } catch (err: any) {
       setIsExtractingWebsite(false);
@@ -1276,15 +1279,16 @@ export default function AdminCMS({
           subscriptionTier: bulkSubscriptionTier
         })
       });
-      const data = await res.json();
-      if (res.ok) {
+      const apiResult = await safeApiJson(res, 'Création en masse (/api/restaurants/bulk)');
+      if (apiResult.ok && apiResult.data) {
+        const data = apiResult.data;
         onRefreshData();
         alert(`✨ ${data.count} restaurants ont été créés par lot pour la ville de ${bulkCity} (${bulkDistrict || 'Arrondissements multiples'}) avec succès !`);
         setBulkNamesText('');
         setBulkDistrict('');
         setShowBulkRestForm(false);
       } else {
-        alert(`Erreur lors de la création : ${data.error}`);
+        alert(apiResult.error || `Erreur lors de la création : ${apiResult.data?.error || 'Échec de la requête'}`);
       }
     } catch (err: any) {
       alert(`Erreur réseau : ${err.message}`);
@@ -1323,13 +1327,15 @@ export default function AdminCMS({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ city: radarCity })
       });
-      const data = await res.json();
-      if (res.ok && data.success) {
-        setRadarResults(data.results);
-        setRadarProgress(prev => [...prev, `✅ Scan terminé avec succès ! ${data.results.length} pépites culinaires localisées.`]);
+      const apiResult = await safeApiJson(res, 'Sourcing Radar (/api/sourcing/radar)');
+      if (apiResult.ok && apiResult.data?.success) {
+        const data = apiResult.data;
+        setRadarResults(data.results || []);
+        setRadarProgress(prev => [...prev, `✅ Scan terminé avec succès ! ${(data.results || []).length} pépites culinaires localisées.`]);
       } else {
-        alert(`Erreur de scan : ${data.error || 'Erreur inconnue'}`);
-        setRadarProgress(prev => [...prev, `❌ Échec du scan radar.`]);
+        const errorMsg = apiResult.error || `Erreur de scan : ${apiResult.data?.error || 'Erreur inconnue'}`;
+        alert(errorMsg);
+        setRadarProgress(prev => [...prev, `❌ ${errorMsg}`]);
       }
     } catch (err: any) {
       alert(`Erreur réseau : ${err.message}`);
@@ -1347,15 +1353,16 @@ export default function AdminCMS({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(item)
       });
-      const data = await res.json();
-      if (res.ok && data.success) {
+      const apiResult = await safeApiJson(res, 'Importation Radar (/api/restaurants/import-sourced)');
+      if (apiResult.ok && apiResult.data?.success) {
+        const data = apiResult.data;
         setImportedRadarIds(prev => [...prev, item.name]);
         onRefreshData();
         if (selectedRadarResult && selectedRadarResult.name === item.name) {
           setSelectedRadarResult(prev => prev ? { ...prev, isAlreadyImported: true } : null);
         }
       } else {
-        alert(`Erreur d'importation : ${data.error || 'Erreur inconnue'}`);
+        alert(apiResult.error || `Erreur d'importation : ${apiResult.data?.error || 'Erreur inconnue'}`);
       }
     } catch (err: any) {
       alert(`Erreur réseau : ${err.message}`);
@@ -6530,10 +6537,10 @@ export default function AdminCMS({
                 <div>
                   <h3 className="text-sm font-black text-white uppercase tracking-wider flex items-center gap-2">
                     <Sparkles size={16} className="text-[#FF5C00]" />
-                    Création instantanée par IA (Scraper de Site Web)
+                    Import Officiel & Extraction Réelle (Crawler Multi-Pages & PDF)
                   </h3>
                   <p className="text-[11px] text-zinc-400 mt-0.5 font-sans">
-                    Saisissez l'adresse URL d'un site web de restaurant (ou n'importe quel restaurant imaginaire ou réel) : notre moteur d'IA va instantanément naviguer sur le site, extraire sa charte graphique, créer l'établissement, configurer son menu complet, ses plats avec photos de haute qualité, ses tarifs, et lui associer une vidéo immersive de préparation culinaire en haut du feed Fidfud.
+                    Saisissez l'URL officielle du restaurant : le crawler explore automatiquement le domaine (jusqu'à 10 pages internes), extrait le logo officiel, la bannière haute définition, la galerie photos, l'adresse avec géolocalisation réelle, les contacts directs (téléphone, email) et le menu complet (HTML & PDF) avec prix réels.
                   </p>
                 </div>
 

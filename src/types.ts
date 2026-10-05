@@ -110,6 +110,13 @@ export interface Restaurant {
   website?: string;
   websiteUrl?: string;
   siret?: string;
+  dataSources?: string[];
+  dataConfidence?: number;
+  lastEnrichedAt?: string;
+  photos?: string[];
+  postalCode?: string;
+  openingHours?: string[] | Record<string, string>;
+  googlePlaceId?: string;
 }
 
 export interface Dish {
@@ -117,7 +124,7 @@ export interface Dish {
   restaurantId: string;
   name: string;
   description: string;
-  price: number;
+  price: number | null;
   isAvailable: boolean;
   imageUrl?: string;
   galleryImages?: string[];
