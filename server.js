@@ -1,7 +1,6 @@
 // server.ts
 import express from "express";
 import path from "path";
-import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import multer from "multer";
 import fs from "fs";
@@ -2322,17 +2321,21 @@ function loadData() {
       }
       console.log("Successfully loaded persistent data from data_store.json");
     } else {
-      saveData();
+      if (!isVercelRuntime) saveData();
     }
-    sanitizeMixkitUrls();
-    deduplicateAllRestaurantsAndRelatedEntities().catch((err) => {
-      console.warn("[Deduplicator] Initial deduplication warning:", err);
-    });
+    if (!isVercelRuntime) {
+      sanitizeMixkitUrls();
+      deduplicateAllRestaurantsAndRelatedEntities().catch((err) => {
+        console.warn("[Deduplicator] Initial deduplication warning:", err);
+      });
+    }
   } catch (err) {
     console.error("Failed to load data from data_store.json:", err);
-    sanitizeMixkitUrls();
-    deduplicateAllRestaurantsAndRelatedEntities().catch(() => {
-    });
+    if (!isVercelRuntime) {
+      sanitizeMixkitUrls();
+      deduplicateAllRestaurantsAndRelatedEntities().catch(() => {
+      });
+    }
   }
 }
 var app = express();
@@ -9417,6 +9420,7 @@ app.post("/api/restaurants/import-sourced", async (req, res) => {
 });
 async function startStandaloneServer() {
   if (process.env.NODE_ENV !== "production" && !process.env.VERCEL) {
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa"

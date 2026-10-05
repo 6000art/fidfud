@@ -1,6 +1,5 @@
 import express from 'express';
 import path from 'path';
-import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI, Type } from '@google/genai';
 import multer from 'multer';
 import fs from 'fs';
@@ -2735,21 +2734,24 @@ export function loadData() {
       }
       console.log('Successfully loaded persistent data from data_store.json');
     } else {
-      saveData();
+      if (!isVercelRuntime) saveData();
     }
     // Do not reinject mock data automatically if the user cleared their restaurants
     // bootstrapDefaultDataIfEmpty();
-    // Auto-heal any invalid mixkit links immediately on-the-fly
-    sanitizeMixkitUrls();
-    // Guarantee deduplication of local records on boot
-    deduplicateAllRestaurantsAndRelatedEntities().catch(err => {
-      console.warn('[Deduplicator] Initial deduplication warning:', err);
-    });
+    // Auto-heal invalid links and deduplicate only in standalone server mode, never during Vercel cold boot
+    if (!isVercelRuntime) {
+      sanitizeMixkitUrls();
+      deduplicateAllRestaurantsAndRelatedEntities().catch(err => {
+        console.warn('[Deduplicator] Initial deduplication warning:', err);
+      });
+    }
   } catch (err) {
     console.error('Failed to load data from data_store.json:', err);
     // bootstrapDefaultDataIfEmpty();
-    sanitizeMixkitUrls();
-    deduplicateAllRestaurantsAndRelatedEntities().catch(() => {});
+    if (!isVercelRuntime) {
+      sanitizeMixkitUrls();
+      deduplicateAllRestaurantsAndRelatedEntities().catch(() => {});
+    }
   }
 }
 
@@ -11145,6 +11147,7 @@ Return strictly a JSON array of up to 6 real restaurants matching this schema:
   // Standalone server runner (Vite middleware or production static files)
   async function startStandaloneServer() {
     if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
+      const { createServer: createViteServer } = await import('vite');
       const vite = await createViteServer({
         server: { middlewareMode: true },
         appType: 'spa'
