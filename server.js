@@ -2265,6 +2265,9 @@ function loadData() {
       if (data.merchantApplications) merchantApplications = data.merchantApplications;
       if (data.designSettings) {
         designSettings = { ...designSettings, ...data.designSettings };
+        if (!designSettings.layoutPreset || designSettings.layoutPreset === "dark_streaming" || designSettings.layoutPreset === "whatnot") {
+          designSettings.layoutPreset = "immersive";
+        }
       }
       if (data.popups && Array.isArray(data.popups)) {
         popups = data.popups.filter((p) => !deletedPopupIds.includes(p.id));

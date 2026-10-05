@@ -1011,38 +1011,52 @@
     {
       "id": "vid-b40ti67",
       "restaurantId": "rest-6leg5v2",
-      "videoUrl": "https://assets.mixkit.co/videos/preview/mixkit-pouring-hot-chocolate-on-a-pancake-41617-large.mp4",
+      "videoUrl": "/uploads/culinary-4.mp4",
       "associatedDishId": "dish-y8qqpfc",
       "title": "🔥 Sensation culinaire chez Ramen & Co Loco IVRY SUR SEINE : découvrez notre délicieuse création Signature Gourmet Ramen & Co Loco IVRY SUR SEINE ! 🤤✨",
       "likesCount": 83,
-      "createdAt": "2026-10-05T08:30:46.431Z"
+      "createdAt": "2026-10-05T08:30:46.431Z",
+      "validationStatus": "valid",
+      "validationCheckedAt": "2026-10-05T09:32:48.127Z",
+      "isOnline": true,
+      "viewsCount": 338,
+      "averageWatchTime": 10.4
     },
     {
       "id": "vid-y2rnvkb",
       "restaurantId": "rest-9xcimzm",
-      "videoUrl": "https://assets.mixkit.co/videos/preview/mixkit-pouring-hot-chocolate-on-a-pancake-41617-large.mp4",
+      "videoUrl": "/uploads/culinary-4.mp4",
       "associatedDishId": "dish-47o8uub",
       "title": "🔥 Sensation culinaire chez Chez Zen IVRY SUR SEINE : découvrez notre délicieuse création Signature Gourmet Chez Zen IVRY SUR SEINE ! 🤤✨",
       "likesCount": 50,
-      "createdAt": "2026-10-05T08:30:46.134Z"
+      "createdAt": "2026-10-05T08:30:46.134Z",
+      "validationStatus": "valid",
+      "validationCheckedAt": "2026-10-05T09:32:48.127Z",
+      "isOnline": true
     },
     {
       "id": "vid-7zbgfqz",
       "restaurantId": "rest-o3lzfsc",
-      "videoUrl": "https://assets.mixkit.co/videos/preview/mixkit-putting-ketchup-on-a-freshly-prepared-hamburger-40246-large.mp4",
+      "videoUrl": "/uploads/culinary-2.mp4",
       "associatedDishId": "dish-7im9dam",
       "title": "🔥 Sensation culinaire chez Le Bistrot Express IVRY SUR SEINE : découvrez notre délicieuse création Le Ramen Traditionnel d'Antan ! 🤤✨",
       "likesCount": 73,
-      "createdAt": "2026-10-05T08:30:45.215Z"
+      "createdAt": "2026-10-05T08:30:45.215Z",
+      "validationStatus": "valid",
+      "validationCheckedAt": "2026-10-05T09:32:48.127Z",
+      "isOnline": true
     },
     {
       "id": "vid-m7sdrhq",
       "restaurantId": "rest-2xskwl4",
-      "videoUrl": "https://assets.mixkit.co/videos/preview/mixkit-fresh-vegetables-and-meat-sizzling-in-a-wok-pan-40242-large.mp4",
+      "videoUrl": "/uploads/culinary-2.mp4",
       "associatedDishId": "dish-ws5821x",
       "title": "🔥 Sensation culinaire chez O'Smash Cozy IVRY SUR SEINE : découvrez notre délicieuse création Le French Toast & Crème Pistache ! 🤤✨",
       "likesCount": 107,
-      "createdAt": "2026-10-05T08:30:43.941Z"
+      "createdAt": "2026-10-05T08:30:43.941Z",
+      "validationStatus": "valid",
+      "validationCheckedAt": "2026-10-05T09:32:48.127Z",
+      "isOnline": true
     },
     {
       "id": "vid-recipe-rec-avocado-minute",
@@ -1135,7 +1149,7 @@
         "isApproved": true
       },
       "validationStatus": "valid",
-      "validationCheckedAt": "2026-10-05T08:19:52.522Z"
+      "validationCheckedAt": "2026-10-05T09:32:48.127Z"
     },
     {
       "id": "vid-7z8lnd0",
@@ -1146,10 +1160,10 @@
       "likesCount": 49,
       "createdAt": "2026-09-24T14:11:54.005Z",
       "validationStatus": "valid",
-      "validationCheckedAt": "2026-10-05T08:19:52.522Z",
+      "validationCheckedAt": "2026-10-05T09:32:48.127Z",
       "isOnline": true,
-      "viewsCount": 317,
-      "averageWatchTime": 5.3
+      "viewsCount": 335,
+      "averageWatchTime": 5.5
     },
     {
       "id": "vid-lpo176t",
@@ -1160,7 +1174,7 @@
       "likesCount": 52,
       "createdAt": "2026-09-24T14:11:47.626Z",
       "validationStatus": "valid",
-      "validationCheckedAt": "2026-10-05T08:19:52.522Z",
+      "validationCheckedAt": "2026-10-05T09:32:48.127Z",
       "isOnline": true,
       "viewsCount": 5,
       "averageWatchTime": 10
@@ -1174,10 +1188,10 @@
       "likesCount": 289,
       "createdAt": "2026-09-24T12:36:26.051Z",
       "validationStatus": "valid",
-      "validationCheckedAt": "2026-10-05T08:19:52.522Z",
+      "validationCheckedAt": "2026-10-05T09:32:48.127Z",
       "isOnline": true,
-      "viewsCount": 255,
-      "averageWatchTime": 15.6
+      "viewsCount": 762,
+      "averageWatchTime": 16.8
     },
     {
       "id": "vid-ifoh4kp",
@@ -1188,7 +1202,7 @@
       "likesCount": 296,
       "createdAt": "2026-09-24T12:36:15.369Z",
       "validationStatus": "valid",
-      "validationCheckedAt": "2026-10-05T08:19:52.522Z",
+      "validationCheckedAt": "2026-10-05T09:32:48.127Z",
       "isOnline": true,
       "viewsCount": 87,
       "averageWatchTime": 6.9
@@ -1279,64 +1293,64 @@
   ],
   "restaurateurs": [
     {
-      "phone": "+33 6 12 34 56 78",
-      "email": "partner@nonnapizza.fr",
-      "bio": "Chef napolitain passionné avec 15 ans d'expérience dans l'art de la pizza au feu de bois.",
-      "restaurantId": "rest-nonna",
-      "createdAt": "2026-07-14T17:34:46.304Z",
       "userId": "usr-rest-nonna",
-      "lastName": "Rossi",
-      "profileImageUrl": "https://images.unsplash.com/photo-1577219491135-ce391730fb2c?w=150&auto=format&fit=crop&q=80",
+      "restaurantId": "rest-nonna",
+      "phone": "+33 6 12 34 56 78",
+      "firstName": "Giovanni",
+      "email": "partner@nonnapizza.fr",
       "id": "restaurateur-nonna",
-      "firstName": "Giovanni"
-    },
-    {
-      "restaurantId": "rest-2fxqcum",
-      "firstName": "Malick",
-      "email": "contact@kolr.fr",
-      "phone": "+33619845649",
-      "userId": "usr-hdlakiy",
-      "lastName": "Winslow",
-      "profileImageUrl": "/uploads/Joey-1785396243076.png",
-      "id": "restaurateur-o9taj3u",
-      "createdAt": "2026-07-30T07:24:07.215Z",
-      "bio": "Le Commencement : Une Rencontre au Carrefour de Deux Mondes\nL'histoire de SYWINS prend racine bien avant sa création, dans une alchimie improbable mais évidente : celle d'un père originaire du Sénégal et d'une mère venue des États-Unis. Deux cultures riches en traditions, en générosité et, surtout, en histoires de famille racontées autour d'une table.\n\nL’amour unit ces deux parcours venus de continents différents. En s'installant ensemble, ils ont naturellement fusionné leurs univers. Pour eux, cuisiner n'a jamais été simplement préparer un repas : c’était une manière de célébrer leurs racines, de raconter d'où ils venaient et de transmettre le meilleur de leur héritage à leurs enfants. C’est cette double empreinte culturelle — la chaleur, les épices et la profondeur des plats sénégalais d'un côté, le réconfort, la gourmandise et l'audace de la cuisine américaine de l'autre — qui a forgé l'identité de SYWINS.\n\nLa Naissance de SYWINS : Le Fait Maison comme ADN\nGrandir entre un maffé ou un thiéboudienne mijoté aux saveurs du Sénégal et des classiques réconfortants de la cuisine américaine, c'est baigner dans un monde où le goût prime sur tout. Face à cette richesse culinaire unique, l'idée de créer un lieu à l'image de cette double culture s'est imposée comme une évidence.\n\nSYWINS naît alors de cette volonté de partage : offrir une cuisine 100 % faite maison, préparée avec amour, où les frontières s'effacent pour laisser place au plaisir pur. Ici, chaque plat raconte une histoire de famille, un pont dressé entre Dakar et les États-Unis.\n\nUne Expérience Unique : Quand l'Afrique et l'Amérique se Donnent Rendez-Vous\nChez SYWINS, la promesse est simple mais exigeante :\n\nL'âme et la générosité sénégalaises : des épices maîtrisées, des plats mijotés qui réchauffent le cœur et rappellent la teranga (l'hospitalité légendaire sénégalaise).\n\nL'esprit et la gourmandise américains : des textures généreuses, des saveurs franches et un sens aigu du partage décomplexé.\n\nLe résultat ? Des spécialités culinaires uniques où le \"fait maison\" n'est pas un argument marketing, mais un engagement familial. Chaque recette est pensée comme un hommage aux parents, une célébration de leur rencontre et un cadeau offert à tous les gourmands en quête d'authentique.\n\nAujourd'hui, SYWINS continue d'écrire son histoire à travers chaque assiette, prouvant que les plus beaux voyages culinaires naissent souvent des plus belles histoires d'amour. ✨"
-    },
-    {
-      "restaurantId": "rest-tokyo",
+      "lastName": "Rossi",
       "createdAt": "2026-07-14T17:34:46.304Z",
-      "phone": "+33 6 98 76 54 32",
-      "lastName": "Sato",
-      "bio": "Maître Ramen formé à Tokyo, dévoué à perfectionner l'onctuosité de nos bouillons artisanaux.",
-      "userId": "usr-rest-tokyo",
+      "bio": "Chef napolitain passionné avec 15 ans d'expérience dans l'art de la pizza au feu de bois.",
+      "profileImageUrl": "https://images.unsplash.com/photo-1577219491135-ce391730fb2c?w=150&auto=format&fit=crop&q=80"
+    },
+    {
+      "createdAt": "2026-07-30T07:24:07.215Z",
+      "phone": "+33619845649",
+      "firstName": "Malick",
+      "restaurantId": "rest-2fxqcum",
+      "userId": "usr-hdlakiy",
+      "id": "restaurateur-o9taj3u",
+      "email": "contact@kolr.fr",
+      "profileImageUrl": "/uploads/Joey-1785396243076.png",
+      "bio": "Le Commencement : Une Rencontre au Carrefour de Deux Mondes\nL'histoire de SYWINS prend racine bien avant sa création, dans une alchimie improbable mais évidente : celle d'un père originaire du Sénégal et d'une mère venue des États-Unis. Deux cultures riches en traditions, en générosité et, surtout, en histoires de famille racontées autour d'une table.\n\nL’amour unit ces deux parcours venus de continents différents. En s'installant ensemble, ils ont naturellement fusionné leurs univers. Pour eux, cuisiner n'a jamais été simplement préparer un repas : c’était une manière de célébrer leurs racines, de raconter d'où ils venaient et de transmettre le meilleur de leur héritage à leurs enfants. C’est cette double empreinte culturelle — la chaleur, les épices et la profondeur des plats sénégalais d'un côté, le réconfort, la gourmandise et l'audace de la cuisine américaine de l'autre — qui a forgé l'identité de SYWINS.\n\nLa Naissance de SYWINS : Le Fait Maison comme ADN\nGrandir entre un maffé ou un thiéboudienne mijoté aux saveurs du Sénégal et des classiques réconfortants de la cuisine américaine, c'est baigner dans un monde où le goût prime sur tout. Face à cette richesse culinaire unique, l'idée de créer un lieu à l'image de cette double culture s'est imposée comme une évidence.\n\nSYWINS naît alors de cette volonté de partage : offrir une cuisine 100 % faite maison, préparée avec amour, où les frontières s'effacent pour laisser place au plaisir pur. Ici, chaque plat raconte une histoire de famille, un pont dressé entre Dakar et les États-Unis.\n\nUne Expérience Unique : Quand l'Afrique et l'Amérique se Donnent Rendez-Vous\nChez SYWINS, la promesse est simple mais exigeante :\n\nL'âme et la générosité sénégalaises : des épices maîtrisées, des plats mijotés qui réchauffent le cœur et rappellent la teranga (l'hospitalité légendaire sénégalaise).\n\nL'esprit et la gourmandise américains : des textures généreuses, des saveurs franches et un sens aigu du partage décomplexé.\n\nLe résultat ? Des spécialités culinaires uniques où le \"fait maison\" n'est pas un argument marketing, mais un engagement familial. Chaque recette est pensée comme un hommage aux parents, une célébration de leur rencontre et un cadeau offert à tous les gourmands en quête d'authentique.\n\nAujourd'hui, SYWINS continue d'écrire son histoire à travers chaque assiette, prouvant que les plus beaux voyages culinaires naissent souvent des plus belles histoires d'amour. ✨",
+      "lastName": "Winslow"
+    },
+    {
       "profileImageUrl": "https://images.unsplash.com/photo-1583394838336-acd977736f90?w=150&auto=format&fit=crop&q=80",
-      "email": "contact@tokyoramen.jp",
+      "lastName": "Sato",
+      "phone": "+33 6 98 76 54 32",
       "id": "restaurateur-tokyo",
-      "firstName": "Kenji"
+      "restaurantId": "rest-tokyo",
+      "email": "contact@tokyoramen.jp",
+      "bio": "Maître Ramen formé à Tokyo, dévoué à perfectionner l'onctuosité de nos bouillons artisanaux.",
+      "firstName": "Kenji",
+      "userId": "usr-rest-tokyo",
+      "createdAt": "2026-07-14T17:34:46.304Z"
     }
   ],
   "restaurateurMedia": [
     {
-      "associatedDishId": "dish-nonna-1",
       "isPosted": true,
       "url": "https://assets.mixkit.co/videos/preview/mixkit-putting-fresh-herbs-on-a-pizza-39981-large.mp4",
-      "createdAt": "2026-07-14T17:34:46.304Z",
-      "restaurantId": "rest-nonna",
-      "title": "Nappage herbes fraîches et basilic",
+      "associatedDishId": "dish-nonna-1",
       "mediaType": "video",
       "restaurateurId": "restaurateur-nonna",
+      "title": "Nappage herbes fraîches et basilic",
+      "createdAt": "2026-07-14T17:34:46.304Z",
+      "restaurantId": "rest-nonna",
       "id": "media-nonna-1"
     },
     {
       "associatedDishId": "dish-nonna-3",
-      "restaurateurId": "restaurateur-nonna",
+      "mediaType": "video",
+      "url": "https://assets.mixkit.co/videos/preview/mixkit-dripping-syrup-on-delicious-pancakes-34326-large.mp4",
+      "restaurantId": "rest-nonna",
+      "title": "Versement de sirop d'érable",
       "isPosted": true,
       "id": "media-nonna-2",
-      "restaurantId": "rest-nonna",
-      "createdAt": "2026-07-14T17:34:46.304Z",
-      "url": "https://assets.mixkit.co/videos/preview/mixkit-dripping-syrup-on-delicious-pancakes-34326-large.mp4",
-      "mediaType": "video",
-      "title": "Versement de sirop d'érable"
+      "restaurateurId": "restaurateur-nonna",
+      "createdAt": "2026-07-14T17:34:46.304Z"
     }
   ],
   "couriers": [
@@ -1434,76 +1448,76 @@
     "borderRadius": "16px",
     "bannerUrl": "https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=1600&auto=format&fit=crop&q=80",
     "typography": "Space Grotesk",
-    "layoutPreset": "immersive",
+    "layoutPreset": "whatnot",
     "customIcons": {
-      "iconProfile": "User",
-      "iconShare": "Share2",
-      "iconHome": "Home",
-      "iconSearch": "Search",
-      "iconSend": "Send",
-      "iconGift": "Gift",
-      "iconFilter": "Sliders",
-      "iconLoyalty": "Coins",
-      "iconOrder": "Zap",
-      "iconUnmute": "VolumeX",
-      "iconLike": "Heart",
-      "iconReview": "Star",
-      "iconMute": "Volume2",
       "iconCart": "ShoppingBag",
-      "iconFollow": "Plus"
+      "iconFilter": "Sliders",
+      "iconFollow": "Plus",
+      "iconHome": "Home",
+      "iconGift": "Gift",
+      "iconReview": "Star",
+      "iconLoyalty": "Coins",
+      "iconProfile": "User",
+      "iconUnmute": "VolumeX",
+      "iconSearch": "Search",
+      "iconShare": "Share2",
+      "iconOrder": "Zap",
+      "iconLike": "Heart",
+      "iconMute": "Volume2",
+      "iconSend": "Send"
     },
     "desktopAds": [
       {
-        "mediaUrl": "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExM3Y2czA5MXNqdmtnaW5vYmN5enU3MHdwdG1scmd6bjZubG42Z3J3ciZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/l0O9xBeS9EUnIy9by/giphy.gif",
-        "clickUrl": "#",
         "subtitle": "Commandez notre pizza cuite minute au feu de bois !",
         "mediaType": "gif",
-        "title": "Nonna's Fresh Truffle Pizza 🍕",
         "id": "ad-top-sidebar",
+        "title": "Nonna's Fresh Truffle Pizza 🍕",
+        "clickUrl": "#",
+        "mediaUrl": "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExM3Y2czA5MXNqdmtnaW5vYmN5enU3MHdwdG1scmd6bjZubG42Z3J3ciZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/l0O9xBeS9EUnIy9by/giphy.gif",
         "isActive": true
       },
       {
-        "isActive": true,
-        "id": "ad-bottom-sidebar",
-        "mediaType": "video",
-        "title": "Tokyo Ramen Special 🍜",
         "subtitle": "Découvrez le ramen Tonkotsu fait maison.",
+        "mediaType": "video",
         "clickUrl": "#",
+        "id": "ad-bottom-sidebar",
+        "isActive": true,
+        "title": "Tokyo Ramen Special 🍜",
         "mediaUrl": "/uploads/culinary-fallback.mp4"
       }
     ],
     "sectionsVisible": {
-      "showChefSpotlight": true,
-      "showLoyaltyClubBanner": true,
       "showVideoFeed": true,
+      "showLoyaltyClubBanner": true,
+      "showChefSpotlight": true,
       "showFeaturedProducts": true,
       "showHero": true
     },
     "featuredDishIds": [],
     "customFeatures": {
-      "enableStripeCommissionSplit": true,
-      "enableLeaderOfTheMonth": true,
       "enableDeliveryCouriers": true,
+      "enableLiveOrdersHistory": true,
       "enableLoyaltyPoints": true,
       "enableTipsAndFlowers": true,
-      "enableLiveOrdersHistory": true
+      "enableStripeCommissionSplit": true,
+      "enableLeaderOfTheMonth": true
     },
     "createdFeatures": [
       {
-        "cta": "Activer",
-        "description": "Commandez en direct et retirez votre plat sans attente en restaurant.",
-        "icon": "⚡",
-        "badge": "PRATIQUE",
         "id": "feat-1",
-        "title": "Retrait Express 🏃‍♂️"
+        "description": "Commandez en direct et retirez votre plat sans attente en restaurant.",
+        "title": "Retrait Express 🏃‍♂️",
+        "cta": "Activer",
+        "badge": "PRATIQUE",
+        "icon": "⚡"
       },
       {
-        "id": "feat-2",
-        "cta": "En savoir plus",
-        "icon": "🌿",
         "badge": "VERT",
-        "description": "Livré exclusivement par nos livreurs à vélo pour un impact carbone neutre.",
-        "title": "Livraison Éco-Locale 🚴"
+        "id": "feat-2",
+        "icon": "🌿",
+        "title": "Livraison Éco-Locale 🚴",
+        "cta": "En savoir plus",
+        "description": "Livré exclusivement par nos livreurs à vélo pour un impact carbone neutre."
       }
     ],
     "logoSizeMobile": 34,
@@ -1520,26 +1534,26 @@
     "splashLogoUrl": "data:image/jpeg;base64,/9j/4QhoRXhpZgAASUkqAAgAAAADAA4BAgD4AwAAMgAAADsBAgAlAAAAKgQAAGmHBAABAAAATwQAA...[truncated-for-firestore]",
     "isVisualEditorActive": false,
     "headerConfig": {
-      "logoPosition": "left",
-      "logoSizeMobile": 34,
-      "logoSizeDesktop": 63,
-      "logoUrl": "/uploads/logo_icone-1785702747479.png",
-      "enableBackdropBlur": true,
-      "backgroundColor": "#0B0B0C",
-      "secondaryLogoType": "badge",
-      "backgroundOpacity": 40,
       "visibleIcons": {
-        "hamburgerMenu": true,
-        "ordersHistory": true,
         "cart": true,
-        "djLive": true,
         "account": true,
         "gpsLocation": true,
-        "searchBar": true
+        "ordersHistory": true,
+        "searchBar": true,
+        "djLive": true,
+        "hamburgerMenu": true
       },
       "secondaryLogoText": "FEED AND FOOD",
       "secondaryLogoUrl": "/uploads/logo_1-1785702759451.png",
-      "showSecondaryLogo": true
+      "logoSizeMobile": 34,
+      "logoPosition": "left",
+      "backgroundOpacity": 40,
+      "showSecondaryLogo": true,
+      "backgroundColor": "#0B0B0C",
+      "secondaryLogoType": "badge",
+      "logoSizeDesktop": 63,
+      "enableBackdropBlur": true,
+      "logoUrl": "/uploads/logo_icone-1785702747479.png"
     },
     "mobileBgColor": "#277916",
     "homePresentationVideoUrl": "/uploads/culinary-fallback.mp4",
@@ -2071,7 +2085,7 @@
       "createdAt": "2026-08-22T12:13:05.115Z"
     }
   ],
-  "isFirestoreUnreachable": true,
+  "isFirestoreUnreachable": false,
   "deletedRestaurantIds": [
     "rest-xzlfjmb",
     "rest-lpls4e5",

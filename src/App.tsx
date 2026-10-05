@@ -308,6 +308,11 @@ export default function App() {
 
   // State hooks for background video playback controls
   const [bgVideoPlaying, setBgVideoPlaying] = useState<boolean>(true);
+  // Normalize layoutPreset to guarantee canonical immersive VideoFeed
+  const effectiveLayoutPreset = (!designSettings.layoutPreset || designSettings.layoutPreset === 'dark_streaming') 
+    ? 'immersive' 
+    : designSettings.layoutPreset;
+
   const [bgVideoMuted, setBgVideoMuted] = useState<boolean>(true);
 
   const handleUpdateDesignSettings = async (updated: Partial<any>) => {
@@ -336,8 +341,14 @@ export default function App() {
       if (res.ok) {
         const data = await res.json();
         if (data.success && data.designSettings) {
-          setDesignSettings(data.designSettings);
-          localStorage.setItem('fidfud_design_settings', JSON.stringify(data.designSettings));
+          const sanitized = {
+            ...data.designSettings,
+            layoutPreset: (data.designSettings.layoutPreset === 'bento' || data.designSettings.layoutPreset === 'whatnot' || data.designSettings.layoutPreset === 'editorial')
+              ? data.designSettings.layoutPreset
+              : 'immersive'
+          };
+          setDesignSettings(sanitized);
+          localStorage.setItem('fidfud_design_settings', JSON.stringify(sanitized));
           return true;
         }
       }
@@ -603,10 +614,13 @@ export default function App() {
         try {
           const designData = await designRes.json();
           if (designData) {
-            if (designData.layoutPreset === 'dark_streaming' || designData.layoutPreset === 'whatnot') {
-              designData.layoutPreset = 'immersive';
-            }
-            setDesignSettings(prev => ({ ...prev, ...designData }));
+            const sanitized = {
+              ...designData,
+              layoutPreset: (designData.layoutPreset === 'bento' || designData.layoutPreset === 'whatnot' || designData.layoutPreset === 'editorial')
+                ? designData.layoutPreset
+                : 'immersive'
+            };
+            setDesignSettings(prev => ({ ...prev, ...sanitized }));
           }
         } catch (err) {
           console.warn('Failed to parse design settings:', err);
@@ -1296,39 +1310,9 @@ export default function App() {
           ) : (
             /* CLIENT-SIDE METAPLATE WITH MULTIPLE LAYOUT PRESETS */
             <div>
-              {(!designSettings.layoutPreset || designSettings.layoutPreset === 'immersive' || isMobile) ? (
-                /* Immersive Classic TikTok full-feed - OFFICIAL FIDFUD REFERENCE */
-                <div className="py-0">
-                  <VideoFeed
-                    videos={clientVideos}
-                    orders={orders}
-                    onSelectDish={handleSelectDish}
-                    onSelectLiveVideo={setActiveLiveVideoId}
-                    isLoading={isLoadingFeed}
-                    user={user}
-                    onOpenAuth={() => setIsAuthOpen(true)}
-                    restaurants={clientRestaurants}
-                    dishes={clientDishes}
-                    searchQuery={searchQuery}
-                    selectedCategory={selectedCategory}
-                    userLocation={userLocation}
-                    designSettings={designSettings}
-                    isProximityFirst={isProximityFirst}
-                    setIsProximityFirst={setIsProximityFirst}
-                    feedSortOrder={feedSortOrder}
-                    setFeedSortOrder={setFeedSortOrder}
-                    proximityRadius={proximityRadius}
-                    isFastLane={isFastLane}
-                    maxPrepTimeMinutes={maxPrepTimeMinutes}
-                    selectedDietaryTags={selectedDietaryTags}
-                    isAutoPlayEnabled={isAutoPlayEnabled}
-                    onDeleteVideo={(id) => setVideos(prev => prev.filter(v => v.id !== id))}
-                    onRefreshData={refreshAllData}
-                  />
-                </div>
-              ) : designSettings.layoutPreset === 'bento' ? (
-              /* Split Bento Grid layout: Video on center-left, custom actions & features on sidebars */
-              <div className="max-w-7xl mx-auto px-4 py-8 grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
+              {effectiveLayoutPreset === 'bento' ? (
+                /* Split Bento Grid layout: Video on center-left, custom actions & features on sidebars */
+                <div className="max-w-7xl mx-auto px-4 py-8 grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
                 
                 {/* Column 1: Custom Branding / Loyalty Sidebar (Col span 4) */}
                 <div className="md:col-span-4 space-y-5">
@@ -1518,7 +1502,7 @@ export default function App() {
 
                 </div>
               </div>
-            ) : designSettings.layoutPreset === 'whatnot' ? (
+            ) : effectiveLayoutPreset === 'whatnot' ? (
               /* Whatnot Live Market layout */
               <WhatnotLiveMarket
                 videos={clientVideos}
@@ -1535,54 +1519,7 @@ export default function App() {
                 accentColor={accentColor}
                 designSettings={designSettings}
               />
-            ) : designSettings.layoutPreset === 'dark_streaming' ? (
-              /* Dark Streaming layout (Optional alternative layout) */
-              <DarkStreamingFeed
-                videos={clientVideos}
-                restaurants={clientRestaurants}
-                dishes={clientDishes}
-                user={user}
-                orders={orders}
-                cartCount={cart.reduce((acc, item) => acc + item.quantity, 0)}
-                cartTotal={cart.reduce((sum, item) => sum + (item.dish.price * item.quantity), 0)}
-                onAddToCart={handleAddToCart}
-                onSelectDish={handleSelectDish}
-                onSelectLiveVideo={setActiveLiveVideoId}
-                onOpenCart={() => setIsCartOpen(true)}
-                onOpenOrdersHistory={() => setIsOrdersHistoryOpen(true)}
-                onOpenAuth={() => setIsAuthOpen(true)}
-                onLogout={handleLogout}
-                onLoginDemo={(role) => {
-                  handleAuthSuccess({
-                    id: role === 'admin' ? 'usr-admin-demo' : role === 'restaurant' ? 'usr-rest-demo' : 'usr-client-demo',
-                    email: role === 'admin' ? 'admin@fidfud.ai' : role === 'restaurant' ? 'chef.robert@fidfud.ai' : 'alexandre.client@fidfud.ai',
-                    role: role
-                  });
-                }}
-                onOpenAdmin={() => setIsAdminCMSOpen(true)}
-                onOpenProfile={() => setIsProfileModalOpen(true)}
-                onOpenOfflineDownloads={() => setIsOfflineDownloadsOpen(true)}
-                onOpenDJArea={() => setIsDJAreaOpen(true)}
-                onOpenShows={() => setIsCulinaryShowsOpen(true)}
-                onOpenYouTubers={() => setIsFoodYouTubersOpen(true)}
-                onOpenRecipes={() => {
-                  setRecipeInitialCategory('all');
-                  setIsRecipeSectionOpen(true);
-                }}
-                onOpenFavorites={() => setIsFavoritesDrawerOpen(true)}
-                accentColor={accentColor}
-                searchQuery={searchQuery}
-                onSearchQueryChange={setSearchQuery}
-                selectedCategory={selectedCategory}
-                onSelectCategory={setSelectedCategory}
-                designSettings={designSettings}
-                isFastLane={isFastLane}
-                setIsFastLane={setIsFastLane}
-                maxPrepTimeMinutes={maxPrepTimeMinutes}
-                setMaxPrepTimeMinutes={setMaxPrepTimeMinutes}
-                onOpenSearch={() => setIsSearchDrawerOpen(true)}
-              />
-            ) : (
+            ) : effectiveLayoutPreset === 'editorial' ? (
               /* Editorial Showcase layout: Full premium curation page, with video player embedded below */
               <div className="max-w-5xl mx-auto px-4 py-8 space-y-10">
                 {/* Grand Hero Banner Card */}
@@ -1796,6 +1733,83 @@ export default function App() {
                   </div>
                 )}
 
+              </div>
+            ) : (designSettings.layoutPreset as string) === '__archived_dark_streaming' ? (
+              /* Preserved legacy reference - deactivated on canonical route */
+              <DarkStreamingFeed
+                videos={clientVideos}
+                restaurants={clientRestaurants}
+                dishes={clientDishes}
+                user={user}
+                orders={orders}
+                cartCount={cart.reduce((acc, item) => acc + item.quantity, 0)}
+                cartTotal={cart.reduce((sum, item) => sum + (item.dish.price * item.quantity), 0)}
+                onAddToCart={handleAddToCart}
+                onSelectDish={handleSelectDish}
+                onSelectLiveVideo={setActiveLiveVideoId}
+                onOpenCart={() => setIsCartOpen(true)}
+                onOpenOrdersHistory={() => setIsOrdersHistoryOpen(true)}
+                onOpenAuth={() => setIsAuthOpen(true)}
+                onLogout={handleLogout}
+                onLoginDemo={(role) => {
+                  handleAuthSuccess({
+                    id: role === 'admin' ? 'usr-admin-demo' : role === 'restaurant' ? 'usr-rest-demo' : 'usr-client-demo',
+                    email: role === 'admin' ? 'admin@fidfud.ai' : role === 'restaurant' ? 'chef.robert@fidfud.ai' : 'alexandre.client@fidfud.ai',
+                    role: role
+                  });
+                }}
+                onOpenAdmin={() => setIsAdminCMSOpen(true)}
+                onOpenProfile={() => setIsProfileModalOpen(true)}
+                onOpenOfflineDownloads={() => setIsOfflineDownloadsOpen(true)}
+                onOpenDJArea={() => setIsDJAreaOpen(true)}
+                onOpenShows={() => setIsCulinaryShowsOpen(true)}
+                onOpenYouTubers={() => setIsFoodYouTubersOpen(true)}
+                onOpenRecipes={() => {
+                  setRecipeInitialCategory('all');
+                  setIsRecipeSectionOpen(true);
+                }}
+                onOpenFavorites={() => setIsFavoritesDrawerOpen(true)}
+                accentColor={accentColor}
+                searchQuery={searchQuery}
+                onSearchQueryChange={setSearchQuery}
+                selectedCategory={selectedCategory}
+                onSelectCategory={setSelectedCategory}
+                designSettings={designSettings}
+                isFastLane={isFastLane}
+                setIsFastLane={setIsFastLane}
+                maxPrepTimeMinutes={maxPrepTimeMinutes}
+                setMaxPrepTimeMinutes={setMaxPrepTimeMinutes}
+                onOpenSearch={() => setIsSearchDrawerOpen(true)}
+              />
+            ) : (
+              /* Immersive Classic TikTok full-feed - CANONICAL FIDFUD FEED (Default for mobile, tablet, desktop) */
+              <div className="py-0">
+                <VideoFeed
+                  videos={clientVideos}
+                  orders={orders}
+                  onSelectDish={handleSelectDish}
+                  onSelectLiveVideo={setActiveLiveVideoId}
+                  isLoading={isLoadingFeed}
+                  user={user}
+                  onOpenAuth={() => setIsAuthOpen(true)}
+                  restaurants={clientRestaurants}
+                  dishes={clientDishes}
+                  searchQuery={searchQuery}
+                  selectedCategory={selectedCategory}
+                  userLocation={userLocation}
+                  designSettings={designSettings}
+                  isProximityFirst={isProximityFirst}
+                  setIsProximityFirst={setIsProximityFirst}
+                  feedSortOrder={feedSortOrder}
+                  setFeedSortOrder={setFeedSortOrder}
+                  proximityRadius={proximityRadius}
+                  isFastLane={isFastLane}
+                  maxPrepTimeMinutes={maxPrepTimeMinutes}
+                  selectedDietaryTags={selectedDietaryTags}
+                  isAutoPlayEnabled={isAutoPlayEnabled}
+                  onDeleteVideo={(id) => setVideos(prev => prev.filter(v => v.id !== id))}
+                  onRefreshData={refreshAllData}
+                />
               </div>
             )}
           </div>
