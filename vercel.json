@@ -5,7 +5,7 @@
   "outputDirectory": "dist",
   "cleanUrls": true,
   "functions": {
-    "api/**/*.{js,ts}": {
+    "api/index.ts": {
       "includeFiles": "{data_store.json,firebase-applet-config.json,server.js}"
     }
   },
