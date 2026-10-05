@@ -230,6 +230,9 @@ export default function App() {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
+        if (!parsed.layoutPreset || parsed.layoutPreset === 'dark_streaming' || parsed.layoutPreset === 'whatnot') {
+          parsed.layoutPreset = 'immersive';
+        }
         return parsed;
       } catch (e) {
         console.error(e);
@@ -246,7 +249,7 @@ export default function App() {
       borderRadius: '16px',
       bannerUrl: 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=1600&auto=format&fit=crop&q=80',
       typography: 'sans', // 'sans' | 'mono' | 'serif' | 'display' or any Google Font family name
-      layoutPreset: 'dark_streaming', // 'dark_streaming' | 'whatnot' | 'immersive' | 'bento' | 'editorial'
+      layoutPreset: 'immersive', // 'immersive' | 'whatnot' | 'bento' | 'editorial' | 'dark_streaming'
       engagementInterval: 20, // customizable engagement interval in seconds
       enableEngagementAnimations: true, // toggle booster prompts on the video feed
       enableFireworks: true, // toggle full-screen fireworks on video likes/tips
@@ -600,6 +603,9 @@ export default function App() {
         try {
           const designData = await designRes.json();
           if (designData) {
+            if (designData.layoutPreset === 'dark_streaming' || designData.layoutPreset === 'whatnot') {
+              designData.layoutPreset = 'immersive';
+            }
             setDesignSettings(prev => ({ ...prev, ...designData }));
           }
         } catch (err) {
@@ -1230,8 +1236,8 @@ export default function App() {
       {/* Offline Data Sync Status Banner */}
       <OfflineSyncBanner onOpenOfflineDownloads={() => setIsOfflineDownloadsOpen(true)} />
 
-      {/* Master Top Navigation Bar - Render when not using embedded Dark Streaming Header */}
-      {!(currentRole === 'client' && !activeLiveVideoId && (designSettings.layoutPreset === 'dark_streaming' || !designSettings.layoutPreset)) && (
+      {/* Master Top Navigation Bar */}
+      {!(currentRole === 'client' && activeLiveVideoId) && (
         <Header
           currentRole={currentRole}
           onChangeRole={(role) => {
@@ -1290,54 +1296,8 @@ export default function App() {
           ) : (
             /* CLIENT-SIDE METAPLATE WITH MULTIPLE LAYOUT PRESETS */
             <div>
-              {designSettings.layoutPreset === 'dark_streaming' || !designSettings.layoutPreset ? (
-                <DarkStreamingFeed
-                  videos={clientVideos}
-                  restaurants={clientRestaurants}
-                  dishes={clientDishes}
-                  user={user}
-                  orders={orders}
-                  cartCount={cart.reduce((acc, item) => acc + item.quantity, 0)}
-                  cartTotal={cart.reduce((sum, item) => sum + (item.dish.price * item.quantity), 0)}
-                  onAddToCart={handleAddToCart}
-                  onSelectDish={handleSelectDish}
-                  onSelectLiveVideo={setActiveLiveVideoId}
-                  onOpenCart={() => setIsCartOpen(true)}
-                  onOpenOrdersHistory={() => setIsOrdersHistoryOpen(true)}
-                  onOpenAuth={() => setIsAuthOpen(true)}
-                  onLogout={handleLogout}
-                  onLoginDemo={(role) => {
-                    handleAuthSuccess({
-                      id: role === 'admin' ? 'usr-admin-demo' : role === 'restaurant' ? 'usr-rest-demo' : 'usr-client-demo',
-                      email: role === 'admin' ? 'admin@fidfud.ai' : role === 'restaurant' ? 'chef.robert@fidfud.ai' : 'alexandre.client@fidfud.ai',
-                      role: role
-                    });
-                  }}
-                  onOpenAdmin={() => setIsAdminCMSOpen(true)}
-                  onOpenProfile={() => setIsProfileModalOpen(true)}
-                  onOpenOfflineDownloads={() => setIsOfflineDownloadsOpen(true)}
-                  onOpenDJArea={() => setIsDJAreaOpen(true)}
-                  onOpenShows={() => setIsCulinaryShowsOpen(true)}
-                  onOpenYouTubers={() => setIsFoodYouTubersOpen(true)}
-                  onOpenRecipes={() => {
-                    setRecipeInitialCategory('all');
-                    setIsRecipeSectionOpen(true);
-                  }}
-                  onOpenFavorites={() => setIsFavoritesDrawerOpen(true)}
-                  accentColor={accentColor}
-                  searchQuery={searchQuery}
-                  onSearchQueryChange={setSearchQuery}
-                  selectedCategory={selectedCategory}
-                  onSelectCategory={setSelectedCategory}
-                  designSettings={designSettings}
-                  isFastLane={isFastLane}
-                  setIsFastLane={setIsFastLane}
-                  maxPrepTimeMinutes={maxPrepTimeMinutes}
-                  setMaxPrepTimeMinutes={setMaxPrepTimeMinutes}
-                  onOpenSearch={() => setIsSearchDrawerOpen(true)}
-                />
-              ) : isMobile || designSettings.layoutPreset === 'immersive' ? (
-                /* Immersive Classic TikTok full-feed */
+              {(!designSettings.layoutPreset || designSettings.layoutPreset === 'immersive' || isMobile) ? (
+                /* Immersive Classic TikTok full-feed - OFFICIAL FIDFUD REFERENCE */
                 <div className="py-0">
                   <VideoFeed
                     videos={clientVideos}
@@ -1574,6 +1534,53 @@ export default function App() {
                 onOpenAuth={() => setIsAuthOpen(true)}
                 accentColor={accentColor}
                 designSettings={designSettings}
+              />
+            ) : designSettings.layoutPreset === 'dark_streaming' ? (
+              /* Dark Streaming layout (Optional alternative layout) */
+              <DarkStreamingFeed
+                videos={clientVideos}
+                restaurants={clientRestaurants}
+                dishes={clientDishes}
+                user={user}
+                orders={orders}
+                cartCount={cart.reduce((acc, item) => acc + item.quantity, 0)}
+                cartTotal={cart.reduce((sum, item) => sum + (item.dish.price * item.quantity), 0)}
+                onAddToCart={handleAddToCart}
+                onSelectDish={handleSelectDish}
+                onSelectLiveVideo={setActiveLiveVideoId}
+                onOpenCart={() => setIsCartOpen(true)}
+                onOpenOrdersHistory={() => setIsOrdersHistoryOpen(true)}
+                onOpenAuth={() => setIsAuthOpen(true)}
+                onLogout={handleLogout}
+                onLoginDemo={(role) => {
+                  handleAuthSuccess({
+                    id: role === 'admin' ? 'usr-admin-demo' : role === 'restaurant' ? 'usr-rest-demo' : 'usr-client-demo',
+                    email: role === 'admin' ? 'admin@fidfud.ai' : role === 'restaurant' ? 'chef.robert@fidfud.ai' : 'alexandre.client@fidfud.ai',
+                    role: role
+                  });
+                }}
+                onOpenAdmin={() => setIsAdminCMSOpen(true)}
+                onOpenProfile={() => setIsProfileModalOpen(true)}
+                onOpenOfflineDownloads={() => setIsOfflineDownloadsOpen(true)}
+                onOpenDJArea={() => setIsDJAreaOpen(true)}
+                onOpenShows={() => setIsCulinaryShowsOpen(true)}
+                onOpenYouTubers={() => setIsFoodYouTubersOpen(true)}
+                onOpenRecipes={() => {
+                  setRecipeInitialCategory('all');
+                  setIsRecipeSectionOpen(true);
+                }}
+                onOpenFavorites={() => setIsFavoritesDrawerOpen(true)}
+                accentColor={accentColor}
+                searchQuery={searchQuery}
+                onSearchQueryChange={setSearchQuery}
+                selectedCategory={selectedCategory}
+                onSelectCategory={setSelectedCategory}
+                designSettings={designSettings}
+                isFastLane={isFastLane}
+                setIsFastLane={setIsFastLane}
+                maxPrepTimeMinutes={maxPrepTimeMinutes}
+                setMaxPrepTimeMinutes={setMaxPrepTimeMinutes}
+                onOpenSearch={() => setIsSearchDrawerOpen(true)}
               />
             ) : (
               /* Editorial Showcase layout: Full premium curation page, with video player embedded below */

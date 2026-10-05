@@ -671,7 +671,7 @@ let designSettings: any = {
   borderRadius: '16px',
   bannerUrl: 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=1600&auto=format&fit=crop&q=80',
   typography: 'sans', // 'sans' | 'mono' | 'serif' | 'display'
-  layoutPreset: 'whatnot', // 'whatnot' | 'immersive' | 'bento' | 'editorial'
+  layoutPreset: 'immersive', // 'immersive' | 'whatnot' | 'bento' | 'editorial'
   customIcons: {
     iconCart: 'ShoppingBag',
     iconFollow: 'Plus',
