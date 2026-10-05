@@ -994,7 +994,7 @@ const MapRoutePreview = ({
               {isClickCollect ? "Itinéraire Click & Collect" : "Suivi de livraison en direct"}
             </p>
             <p className="text-[10px] text-zinc-500 mt-0.5">
-              {order.restaurantName || "Restaurant"} ➔ {order.customerAddress || "Point de retrait"}
+              {order.restaurantName || "Restaurant"} ➔ {(order as any).customerAddress || (order as any).deliveryAddress || "Point de retrait"}
             </p>
           </div>
         )}

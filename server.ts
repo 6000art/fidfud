@@ -2724,9 +2724,8 @@ const PORT = 3000;
 app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ limit: '100mb', extended: true }));
 
-async function startServer() {
-  // Load saved data on startup
-  loadData();
+// Load saved data on startup
+loadData();
   
   // Setup auto cache cleaner
   setupAutoCacheCleaner();
@@ -10895,27 +10894,44 @@ The JSON schema must be a list of objects, each containing:
     res.status(201).json({ success: true, restaurant: newRest });
   });
 
-  // Vite middleware for development or Static Assets for production
-  if (process.env.NODE_ENV !== 'production') {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: 'spa'
-    });
-    app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
-    // SPA fallback handling
-    app.get('*', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
+  // Standalone server runner (Vite middleware or production static files)
+  async function startStandaloneServer() {
+    if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
+      const vite = await createViteServer({
+        server: { middlewareMode: true },
+        appType: 'spa'
+      });
+      app.use(vite.middlewares);
+    } else if (!process.env.VERCEL) {
+      const distPath = path.join(process.cwd(), 'dist');
+      if (fs.existsSync(distPath)) {
+        app.use(express.static(distPath));
+        app.get('*', (req, res) => {
+          res.sendFile(path.join(distPath, 'index.html'));
+        });
+      }
+    }
+
+    if (!process.env.VERCEL) {
+      app.listen(Number(PORT), '0.0.0.0', () => {
+        console.log(`Fidfud server running on http://0.0.0.0:${PORT}`);
+      });
+    }
+  }
+
+  // Only start the HTTP listener if executed directly (e.g. tsx server.ts or node server.js), NOT when imported in Vercel
+  const isDirectExecution = Boolean(
+    process.argv[1] && (
+      process.argv[1].endsWith('server.ts') ||
+      process.argv[1].endsWith('server.js') ||
+      process.argv[1].endsWith('server.cjs')
+    )
+  );
+
+  if (isDirectExecution && !process.env.VERCEL) {
+    startStandaloneServer().catch(err => {
+      console.error('Failed to start standalone server:', err);
     });
   }
 
-  if (!process.env.VERCEL) {
-    app.listen(PORT, '0.0.0.0', () => {
-      console.log(`Fidfud server running on http://0.0.0.0:${PORT}`);
-    });
-  }
-}
-
-startServer();
+  export default app;
