@@ -7218,7 +7218,7 @@ async function parsePageContent(pageUrl, isSubpage = false) {
                     pageData.dishes.push({
                       name: String(mi.name).trim(),
                       description: mi.description ? String(mi.description).trim() : "",
-                      price: !isNaN(priceNum) && priceNum > 0 ? priceNum : 14.5,
+                      price: !isNaN(priceNum) && priceNum > 0 ? priceNum : null,
                       category: mi.category || "Plat",
                       imageUrl: dImg ? resolveUrl(dImg) : void 0
                     });
@@ -7603,7 +7603,7 @@ Return a valid JSON object matching:
     {
       "name": "Exact real dish name",
       "description": "Real description",
-      "price": 14.50,
+      "price": 14.50, // Real price number or null if price is not displayed on website
       "category": "Plat",
       "imageUrl": "Real photo URL if available or null"
     }
@@ -7715,7 +7715,7 @@ Return a valid JSON object matching:
           restaurantId: existingMatch.id,
           name: dishData.name,
           description: dishData.description || "",
-          price: Number(dishData.price) || 14.5,
+          price: dishData.price !== void 0 && dishData.price !== null && !isNaN(Number(dishData.price)) && Number(dishData.price) > 0 ? Number(dishData.price) : null,
           isAvailable: true,
           imageUrl: dishData.imageUrl || void 0,
           createdAt: (/* @__PURE__ */ new Date()).toISOString(),
@@ -7792,7 +7792,7 @@ Return a valid JSON object matching:
       restaurantId: newRestId,
       name: dishData.name,
       description: dishData.description || "",
-      price: Number(dishData.price) || 14.5,
+      price: dishData.price !== void 0 && dishData.price !== null && !isNaN(Number(dishData.price)) && Number(dishData.price) > 0 ? Number(dishData.price) : null,
       isAvailable: true,
       imageUrl: dishData.imageUrl || void 0,
       createdAt: (/* @__PURE__ */ new Date()).toISOString(),
@@ -9107,7 +9107,7 @@ app.post("/api/restaurants/import-sourced", async (req, res) => {
           restaurantId: id,
           name: d.name,
           description: d.description || "",
-          price: d.price || 14.5,
+          price: d.price ?? null,
           imageUrl: d.imageUrl || void 0,
           isAvailable: true,
           createdAt: (/* @__PURE__ */ new Date()).toISOString(),
